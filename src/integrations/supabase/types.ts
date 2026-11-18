@@ -14,7 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_runs: {
+        Row: {
+          checks: Json
+          created_at: string
+          event_count: number
+          id: string
+          opinion: string
+          run_name: string
+          source_filename: string
+          source_log: Json
+          storage_path: string
+          thresholds: Json
+          user_id: string
+        }
+        Insert: {
+          checks: Json
+          created_at?: string
+          event_count?: number
+          id?: string
+          opinion: string
+          run_name: string
+          source_filename: string
+          source_log: Json
+          storage_path: string
+          thresholds: Json
+          user_id: string
+        }
+        Update: {
+          checks?: Json
+          created_at?: string
+          event_count?: number
+          id?: string
+          opinion?: string
+          run_name?: string
+          source_filename?: string
+          source_log?: Json
+          storage_path?: string
+          thresholds?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

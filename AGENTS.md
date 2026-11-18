@@ -28,3 +28,7 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## AgentLedger architecture
+
+- Keep AgentLedger scoring as pure helpers in `src/lib` and share signed-in audit state through the root UI provider; the database and file policies scope every record and upload to its owner.
