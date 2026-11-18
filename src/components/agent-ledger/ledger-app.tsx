@@ -276,7 +276,7 @@ function SignInPanel() {
         <Button type="submit" className="mt-1 h-10 w-full justify-between rounded-none text-xs font-bold" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? "Sign in with email" : "Create account"}<ArrowRight size={15}/></Button>
       </form>
       <div className="mt-4 border-t border-border/80 pt-3 text-center text-[11px] text-muted-foreground">{mode === "signin" ? "New here?" : "Already have an account?"} <button type="button" className="cursor-pointer font-semibold text-primary underline underline-offset-4" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setFormError(""); setFormSuccess(""); }} disabled={busy}>{mode === "signin" ? "Create an account" : "Sign in"}</button></div>
-      <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[9px] leading-relaxed text-muted-foreground"><LockKeyhole size={10}/> Your uploaded logs are encrypted in private storage.</p>
+      <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[9px] leading-relaxed text-muted-foreground"><LockKeyhole size={10}/> Your uploaded logs stay in private storage.</p>
     </div>
   );
 }
@@ -329,11 +329,15 @@ export function DashboardPage() {
   const [fileError, setFileError] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "needs-review">("all");
+  const [historySort, setHistorySort] = useState<"newest" | "oldest">("newest");
   const latestRun = runs[0] ?? null;
   const filteredRuns = useMemo(() => runs.filter((run) =>
     run.run_name.toLowerCase().includes(query.toLowerCase()) &&
     (filter === "all" || runChecks(run).some((check) => check.status !== "pass")),
-  ), [filter, query, runs]);
+  ).sort((first, second) => historySort === "newest"
+    ? second.created_at.localeCompare(first.created_at)
+    : first.created_at.localeCompare(second.created_at),
+  ), [filter, historySort, query, runs]);
   const totals = useMemo(() => runs.reduce((value, run) => {
     const checks = runChecks(run);
     value.pass += checks.filter((check) => check.status === "pass").length;
@@ -356,7 +360,7 @@ export function DashboardPage() {
       try { source = JSON.parse(text); } catch { throw new Error("This file is not valid JSON. Correct the file and try again."); }
       const events = extractAuditEvents(source);
       if (events.length === 0) throw new Error("This JSON has no run entries to review. Upload an entry or an empty event list with run metadata.");
-      const checks = scoreAudit(events, thresholds);
+      const checks = scoreAudit(events, thresholds, source);
       const stem = file.name.replace(/\.json$/i, "").replace(/[_-]+/g, " ").trim() || "Agent run";
       const run = await importRun(file.name, source as Json, checks, stem);
       toast.success("Run uploaded. Your linked audit is ready.");
@@ -415,7 +419,7 @@ export function DashboardPage() {
                 <div className="mt-4 flex gap-3 border border-border/60 bg-card/25 px-4 py-3"><span className="ledger-mono pt-0.5 text-[9px] text-primary">↳</span><p className="text-[10px] leading-relaxed text-muted-foreground">Each check is tied to fields found in your log. A hallucination rate is reported only when the file includes an explicit rate or complete per-entry labels.</p></div>
                 {latestRun && <div className="mt-6 overflow-hidden border border-border bg-card/50"><div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Most recent audit</span><h3 className="mt-1 truncate text-sm font-bold">{latestRun.run_name}</h3></div><Link to="/report/$auditId" params={{auditId:latestRun.id}} className="inline-flex min-h-9 shrink-0 items-center gap-2 border border-border px-3 text-[10px] font-bold hover:border-primary/50 hover:text-primary">View report <ArrowUpRight size={13}/></Link></div><LatestCheckList run={latestRun}/></div>}
                 <div className="mt-8 border-t border-border/80 pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-bold">Audit history</h2><p className="mt-1 text-[10px] text-muted-foreground">Your saved runs, newest first.</p></div><div className="flex items-center gap-2"><Button variant={filter==="all"?"secondary":"ghost"} size="sm" className="h-8 text-[10px]" onClick={()=>setFilter("all")}>All runs</Button><Button variant={filter==="needs-review"?"secondary":"ghost"} size="sm" className="h-8 text-[10px]" onClick={()=>setFilter("needs-review")}>Needs review</Button></div></div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_190px]"><label className="relative block"><span className="sr-only">Search audit history</span><Input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search runs…" className="h-9 rounded-none border-border/80 bg-background/50 text-[11px]" aria-label="Search audit history"/></label><label className="flex items-center gap-2 text-[9px] text-muted-foreground">Sort: <select aria-label="Sort audit history" className="min-h-9 min-w-0 flex-1 border border-input bg-background px-2 text-[10px] text-foreground"><option>Newest first</option></select><ChevronDown size={12}/></label></div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_190px]"><label className="relative block"><span className="sr-only">Search audit history</span><Input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search runs…" className="h-9 rounded-none border-border/80 bg-background/50 text-[11px]" aria-label="Search audit history"/></label><label className="flex items-center gap-2 text-[9px] text-muted-foreground">Sort: <select aria-label="Sort audit history" value={historySort} onChange={(event)=>setHistorySort(event.target.value as "newest"|"oldest")} className="min-h-9 min-w-0 flex-1 border border-input bg-background px-2 text-[10px] text-foreground"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select><ChevronDown size={12}/></label></div>
                   <div className="mt-3">
                     {loadingRuns ? <p className="ledger-mono border-y border-border/80 py-6 text-center text-[10px] text-muted-foreground">Loading your private runs…</p> : filteredRuns.length===0 ? <div className="border-y border-border/80 py-6 text-center"><p className="text-[11px] text-muted-foreground">{runs.length===0?"No audit runs yet. Upload a JSON log to get started.":"No runs match these filters."}</p></div> : <div className="ledger-grid-lines grid">{filteredRuns.map((run)=>{const checks=runChecks(run);const fail=checks.filter((check)=>check.status==="fail").length;const unknown=checks.filter((check)=>check.status==="not-evidenced").length;return <div key={run.id} className="flex flex-wrap items-center gap-3 py-3"><div className="flex min-w-0 flex-1 items-center gap-3"><span className={`flex size-8 shrink-0 items-center justify-center border ${fail?"ledger-status-fail":unknown?"ledger-status-unknown":"ledger-status-pass"}`}>{fail?<ShieldAlert size={14}/>:unknown?<ShieldQuestion size={14}/>:<Check size={14}/>}</span><div className="min-w-0"><Link to="/findings/$auditId" params={{auditId:run.id}} className="block truncate text-[11px] font-semibold hover:text-primary">{run.run_name}</Link><span className="ledger-mono mt-1 block truncate text-[9px] text-muted-foreground">{formattedDate(run.created_at,true)} · {run.event_count} {run.event_count===1?"entry":"entries"}</span></div></div><div className="flex items-center gap-2"><span className="ledger-mono text-[9px] text-muted-foreground">{fail?`${fail} fail`:unknown?`${unknown} unevidenced`:"4 pass"}</span><Link aria-label={`Open ${run.run_name} findings`} to="/findings/$auditId" params={{auditId:run.id}} className="flex size-8 items-center justify-center border border-border/70 text-muted-foreground hover:border-primary/70 hover:text-primary"><ArrowUpRight size={14}/></Link><Button aria-label={`Delete ${run.run_name}`} title="Delete this audit and its original log" size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-coral" onClick={()=>void clearHistory(run)}><X size={14}/></Button></div></div>;})}</div>}
                   </div>

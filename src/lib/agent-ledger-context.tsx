@@ -89,18 +89,11 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refreshRuns();
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
-      if (event === "SIGNED_OUT") {
-        setEmail(null);
-        setRuns([]);
-        setLoadingRuns(false);
-        setThresholds(DEFAULT_THRESHOLDS);
-      } else {
-        window.setTimeout(() => void refreshRuns(), 0);
-      }
-    });
-    return () => data.subscription.unsubscribe();
+    const onAuthTransition = () => {
+      window.setTimeout(() => void refreshRuns(), 0);
+    };
+    window.addEventListener("agentledger:auth-transition", onAuthTransition);
+    return () => window.removeEventListener("agentledger:auth-transition", onAuthTransition);
   }, [refreshRuns]);
 
   const importRun = useCallback(

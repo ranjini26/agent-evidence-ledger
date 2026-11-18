@@ -90,7 +90,7 @@ function scalarIsPresent(value: unknown): boolean {
 
 function isRecordedHumanOversight(field: { key: string; value: unknown }): boolean {
   if (!OVERSIGHT_KEYS.has(field.key) || !scalarIsPresent(field.value)) return false;
-  if (typeof field.value === "boolean") return field.key.startsWith("human_") || field.key === "approved_by" ? field.value : false;
+  if (typeof field.value === "boolean") return field.key === "human_review" || field.key === "human_approval" || field.key === "human_approved" ? field.value : false;
   if (field.key === "review_status") {
     return typeof field.value === "string" && /^(approved|reviewed|complete|completed|accepted|yes)$/i.test(field.value.trim());
   }
