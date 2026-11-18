@@ -9,6 +9,15 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { extractAuditEvents, type AuditCheck, type AuditThresholds } from "@/lib/agent-ledger";
+import {
+  createGuestAuditRun,
+  deleteGuestAudit,
+  isGuestAuditRun,
+  loadGuestAudits,
+  readGuestThresholds,
+  saveGuestAudit,
+  writeGuestThresholds,
+} from "@/lib/agent-ledger-local";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
 export type AuditRun = Tables<"audit_runs">;
@@ -33,6 +42,8 @@ const DEFAULT_THRESHOLDS: AuditThresholds = {
   oversightMin: 10,
 };
 
+const TEMPORARY_DEVICE_ONLY_TEST_MODE = true;
+
 const LedgerContext = createContext<AuditLedgerContextValue | null>(null);
 
 export function useAgentLedger(): AuditLedgerContextValue {
@@ -46,7 +57,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [runs, setRuns] = useState<AuditRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
-  const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS);
+  const [thresholds, setThresholdsState] = useState(DEFAULT_THRESHOLDS);
   const [error, setError] = useState("");
 
   const refreshRuns = useCallback(async () => {
@@ -54,7 +65,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     if (userError || !userData.user) {
       setEmail(null);
       setRuns([]);
-      setThresholds(DEFAULT_THRESHOLDS);
+      setThresholdsState(DEFAULT_THRESHOLDS);
       setLoadingRuns(false);
       return;
     }
@@ -76,7 +87,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       const lastThresholds = nextRuns[0]?.thresholds;
       if (lastThresholds && typeof lastThresholds === "object" && !Array.isArray(lastThresholds)) {
         const saved = lastThresholds as Partial<AuditThresholds>;
-        setThresholds((current) => ({
+        setThresholdsState((current) => ({
           traceabilityMin: Number(saved.traceabilityMin ?? current.traceabilityMin),
           versioningMin: Number(saved.versioningMin ?? current.versioningMin),
           hallucinationMax: Number(saved.hallucinationMax ?? current.hallucinationMax),
@@ -88,19 +99,136 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refreshRuns();
+    let cancelled = false;
+    const restoreGuestWorkspace = async () => {
+      if (TEMPORARY_DEVICE_ONLY_TEST_MODE) {
+        try {
+          const [guestRuns, savedThresholds] = await Promise.all([
+            loadGuestAudits(),
+            Promise.resolve(readGuestThresholds(window.localStorage)),
+          ]);
+          if (!cancelled) {
+            setRuns(guestRuns);
+            setThresholdsState(savedThresholds);
+          }
+        } catch (guestError) {
+          if (!cancelled) {
+            setError(guestError instanceof Error ? guestError.message : "Could not open the device-only test workspace.");
+            setRuns([]);
+          }
+        } finally {
+          if (!cancelled) {
+            setEmail(null);
+            setLoadingRuns(false);
+          }
+        }
+        return;
+      }
+      const { data } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (data.user) {
+        await refreshRuns();
+        return;
+      }
+      try {
+        const [guestRuns, savedThresholds] = await Promise.all([
+          loadGuestAudits(),
+          Promise.resolve(readGuestThresholds(window.localStorage)),
+        ]);
+        if (!cancelled) {
+          setRuns(guestRuns);
+          setThresholdsState(savedThresholds);
+        }
+      } catch (guestError) {
+        if (!cancelled) {
+          setError(guestError instanceof Error ? guestError.message : "Could not open the device-only test workspace.");
+          setRuns([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setEmail(null);
+          setLoadingRuns(false);
+        }
+      }
+    };
+    void restoreGuestWorkspace();
     const onAuthTransition = () => {
-      window.setTimeout(() => void refreshRuns(), 0);
+      if (TEMPORARY_DEVICE_ONLY_TEST_MODE) return;
+      window.setTimeout(() => {
+        void (async () => {
+          const { data } = await supabase.auth.getUser();
+          if (data.user) {
+            await refreshRuns();
+          } else {
+            try {
+              const [guestRuns, guestThresholds] = await Promise.all([
+                loadGuestAudits(),
+                Promise.resolve(readGuestThresholds(window.localStorage)),
+              ]);
+              setRuns(guestRuns);
+              setThresholdsState(guestThresholds);
+              setEmail(null);
+              setLoadingRuns(false);
+            } catch {
+              setRuns([]);
+              setEmail(null);
+              setLoadingRuns(false);
+            }
+          }
+        })();
+      }, 0);
     };
     window.addEventListener("agentledger:auth-transition", onAuthTransition);
-    return () => window.removeEventListener("agentledger:auth-transition", onAuthTransition);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("agentledger:auth-transition", onAuthTransition);
+    };
   }, [refreshRuns]);
+
+  const setThresholds = useCallback((next: AuditThresholds) => {
+    setThresholdsState(next);
+    try {
+      if (TEMPORARY_DEVICE_ONLY_TEST_MODE || !email) writeGuestThresholds(window.localStorage, next);
+    } catch {
+      setError("This browser could not save test thresholds on this device.");
+    }
+  }, [email]);
 
   const importRun = useCallback(
     async (filename: string, log: Json, checks: AuditCheck[], runName: string) => {
       setError("");
+      if (TEMPORARY_DEVICE_ONLY_TEST_MODE) {
+        const id = crypto.randomUUID();
+        const localRun = createGuestAuditRun(
+          filename,
+          log,
+          checks,
+          runName,
+          thresholds,
+          id,
+          new Date().toISOString(),
+        );
+        await saveGuestAudit(localRun);
+        setRuns((current) => [localRun, ...current.filter((run) => run.id !== localRun.id)]);
+        return localRun;
+      }
       const { data: userData, error: authError } = await supabase.auth.getUser();
-      if (authError || !userData.user) throw new Error("Sign in again to save this audit.");
+      if (!userData.user && !authError) {
+        const id = crypto.randomUUID();
+        const localRun = createGuestAuditRun(
+          filename,
+          log,
+          checks,
+          runName,
+          thresholds,
+          id,
+          new Date().toISOString(),
+        );
+        await saveGuestAudit(localRun);
+        setRuns((current) => [localRun, ...current.filter((run) => run.id !== localRun.id)]);
+        return localRun;
+      }
+      if (authError || !userData.user) throw new Error("Could not verify account status. Please try again.");
       const storagePath = `${userData.user.id}/${crypto.randomUUID()}.json`;
       const sourceFile = new File([JSON.stringify(log, null, 2)], filename, { type: "application/json" });
       const { error: uploadError } = await supabase.storage
@@ -140,10 +268,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   const removeRun = useCallback(async (run: AuditRun) => {
     setError("");
-    const { error: removeError } = await supabase.from("audit_runs").delete().eq("id", run.id);
-    if (removeError) throw new Error(`The audit could not be deleted: ${removeError.message}`);
-    await supabase.storage.from("agentledger-run-logs").remove([run.storage_path]);
-    setRuns((current) => current.filter((item) => item.id !== run.id));
+      if (isGuestAuditRun(run)) {
+        await deleteGuestAudit(run.id);
+        setRuns((current) => current.filter((item) => item.id !== run.id));
+        return;
+      }
+      const { error: removeError } = await supabase.from("audit_runs").delete().eq("id", run.id);
+      if (removeError) throw new Error(`The audit could not be deleted: ${removeError.message}`);
+      await supabase.storage.from("agentledger-run-logs").remove([run.storage_path]);
+      setRuns((current) => current.filter((item) => item.id !== run.id));
   }, []);
 
   const signOut = useCallback(async () => {
@@ -153,7 +286,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     if (signOutError) throw new Error(signOutError.message);
     setEmail(null);
     setRuns([]);
-    setThresholds(DEFAULT_THRESHOLDS);
+    setThresholdsState(DEFAULT_THRESHOLDS);
   }, [queryClient]);
 
   return (

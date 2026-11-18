@@ -5,6 +5,7 @@ import {
   extractAuditEvents,
   scoreAudit,
 } from "@/lib/agent-ledger";
+import { createGuestAuditRun, isGuestAuditRun, readGuestThresholds } from "@/lib/agent-ledger-local";
 
 describe("AgentLedger evidence checks", () => {
   it("distinguishes a missing hallucination measurement from a zero rate", () => {
@@ -99,5 +100,25 @@ describe("AgentLedger evidence checks", () => {
     expect(() => extractAuditEvents("not a run log")).toThrow(
       "Upload a JSON object or an array of log entries.",
     );
+  });
+
+  it("keeps guest audit runs marked as device-only and reads editable local thresholds", () => {
+    const values = new Map<string, string>([["agentledger:device-test-thresholds", JSON.stringify({
+      traceabilityMin: 88,
+      versioningMin: 90,
+      hallucinationMax: 5,
+      oversightMin: 10,
+    })]]);
+    const thresholds = readGuestThresholds({
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    });
+    const checks = scoreAudit(extractAuditEvents([{ event_id: "evt-1" }]));
+    const run = createGuestAuditRun("run.json", [{ event_id: "evt-1" }], checks, "Local test", thresholds, "test-id", "2026-11-18T09:00:00Z");
+
+    expect(thresholds.traceabilityMin).toBe(88);
+    expect(run.id).toBe("local-test-id");
+    expect(isGuestAuditRun(run)).toBe(true);
+    expect(run.storage_path).toBe("device-only://test-id.json");
   });
 });

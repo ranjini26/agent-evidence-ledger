@@ -32,3 +32,4 @@ use the editor.
 ## AgentLedger architecture
 
 - Keep AgentLedger scoring as pure helpers in `src/lib` and share signed-in audit state through the root UI provider; the database and file policies scope every record and upload to its owner.
+- Keep temporary guest test audits in browser-only IndexedDB; never send them to owner-scoped cloud tables or storage.

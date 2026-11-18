@@ -1,23 +1,21 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LovableMark } from "@lovable.dev/cloud-auth-js/react";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Check, ChevronDown,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown,
   CircleDot, ClipboardCheck, FileCheck2, FileDown, FileJson2, Fingerprint,
-  Gauge, LockKeyhole, LogOut, Printer, ShieldAlert, ShieldCheck,
+  Gauge, HardDrive, LockKeyhole, LogOut, Printer, ShieldAlert, ShieldCheck,
   ShieldQuestion, SlidersHorizontal, Sparkles, UploadCloud, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useAgentLedger, type AuditRun } from "@/lib/agent-ledger-context";
+import { isGuestAuditRun } from "@/lib/agent-ledger-local";
 import {
   DEFAULT_THRESHOLDS, auditOpinion, extractAuditEvents, formatEvidencePath,
   scoreAudit, type AuditCheck, type AuditThresholds, type AuditStatus,
 } from "@/lib/agent-ledger";
 import type { Json } from "@/integrations/supabase/types";
-import { lovable } from "@/integrations/lovable/index";
 
 const controls = [
   { key: "traceabilityMin", label: "Traceability", note: "Entries with an ID or timestamp", unit: "%", icon: Fingerprint },
@@ -91,17 +89,6 @@ function Brand({ compact = false }: { compact?: boolean }) {
         </span>
       )}
     </Link>
-  );
-}
-
-function GoogleGlyph() {
-  return (
-    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/>
-      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"/>
-      <path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"/>
-      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"/>
-    </svg>
   );
 }
 
@@ -183,7 +170,7 @@ function AppFrame({ children, active }: { children: ReactNode; active: "dashboar
           <div className="mx-4 mt-auto border-t border-border/70 py-4">
             <div className="flex items-center gap-2 px-1 text-muted-foreground">
               <LockKeyhole size={12} aria-hidden="true" />
-              <span className="ledger-mono text-[9px] uppercase tracking-[0.07em]">Private to your account</span>
+              <span className="ledger-mono text-[9px] uppercase tracking-[0.07em]">{email ? "Private to your account" : "Test data stays on this device"}</span>
             </div>
             <AccountPanel />
           </div>
@@ -194,8 +181,8 @@ function AppFrame({ children, active }: { children: ReactNode; active: "dashboar
             <div className="flex min-w-0 items-center gap-3 md:hidden"><Brand compact /><div className="h-5 w-px shrink-0 bg-border"/><span className="ledger-mono truncate text-[10px] uppercase tracking-[0.11em] text-muted-foreground">AgentLedger</span></div>
             <div className="hidden items-center gap-2.5 md:flex"><span className="size-1.5 rounded-full bg-primary shadow-[0_0_9px_var(--color-primary)]"/><span className="ledger-mono text-[10px] tracking-[0.05em] text-muted-foreground">CONTROL REVIEW / <span className="text-foreground">ACTIVE</span></span></div>
             <div className="flex min-w-0 items-center gap-2.5">
-              {email ? <span className="hidden max-w-52 truncate text-[11px] text-muted-foreground sm:block">{email}</span> : <span className="ledger-mono text-[9px] uppercase tracking-[0.08em] text-review">Read-only access</span>}
-              <span className="inline-flex size-8 shrink-0 items-center justify-center border border-border/80 bg-secondary/40 text-muted-foreground" aria-label={email ? "Signed in" : "Sign-in required"}>{email ? <ShieldCheck size={15} aria-hidden="true"/> : <LockKeyhole size={14} aria-hidden="true"/>}</span>
+              {email ? <span className="hidden max-w-52 truncate text-[11px] text-muted-foreground sm:block">{email}</span> : <span className="ledger-mono text-[9px] uppercase tracking-[0.08em] text-review">Device-only testing</span>}
+              <span className="inline-flex size-8 shrink-0 items-center justify-center border border-border/80 bg-secondary/40 text-muted-foreground" aria-label={email ? "Signed in" : "Device-only test mode"}>{email ? <ShieldCheck size={15} aria-hidden="true"/> : <HardDrive size={14} aria-hidden="true"/>}</span>
               {email && <Button className="inline-flex sm:hidden" size="icon" variant="ghost" aria-label="Sign out" onClick={() => void signOut()}><LogOut size={15}/></Button>}
             </div>
           </header>
@@ -203,7 +190,7 @@ function AppFrame({ children, active }: { children: ReactNode; active: "dashboar
           <div className="min-w-0 flex-1 px-4 py-6 sm:px-7 sm:py-8 lg:px-10">{children}</div>
           <footer className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-4 sm:px-7 lg:px-10">
             <span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">AgentLedger <span className="mx-1 text-border">/</span> Evidence, not assumptions.</span>
-            <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground"><LockKeyhole size={11} aria-hidden="true"/> Logs are private to their owner</span>
+            <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">{email ? <><LockKeyhole size={11} aria-hidden="true"/> Logs are private to their owner</> : <><HardDrive size={11} aria-hidden="true"/> Test logs stay on this device</>}</span>
           </footer>
         </main>
       </div>
@@ -214,69 +201,6 @@ function AppFrame({ children, active }: { children: ReactNode; active: "dashboar
           {runs[0] && <Link to="/report/$auditId" params={{ auditId: runs[0].id }} className={`flex min-h-10 flex-1 items-center justify-center gap-2 text-[10px] font-semibold ${active === "report" ? "text-primary" : "text-muted-foreground"}`}><FileCheck2 size={14} aria-hidden="true"/> Report</Link>}
         </nav>
       </div>
-    </div>
-  );
-}
-
-function SignInPanel() {
-  const { email } = useAgentLedger();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [busy, setBusy] = useState(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState(false);
-  const [formError, setFormError] = useState("");
-  const [formSuccess, setFormSuccess] = useState("");
-  const emailRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
-  if (email) return <div className="border border-border bg-card/60 p-5"><div className="flex items-center gap-2 text-signal"><ShieldCheck size={16}/><span className="text-sm font-bold">Your audit ledger is ready</span></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Upload a JSON run log to create your first evidence-linked review.</p></div>;
-
-  const onEmail = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); setFormError(""); setFormSuccess("");
-    const emailValue = emailRef.current?.value.trim();
-    const passwordValue = passwordRef.current?.value;
-    if (!emailValue || !passwordValue) { setFormError("Enter your email and password."); setBusy(false); return; }
-    try {
-      if (mode === "signin") {
-        const { error } = await import("@/integrations/supabase/client").then(({ supabase }) => supabase.auth.signInWithPassword({ email: emailValue, password: passwordValue }));
-        if (error) throw error;
-      } else {
-        const { error, data } = await import("@/integrations/supabase/client").then(({ supabase }) => supabase.auth.signUp({ email: emailValue, password: passwordValue, options: { emailRedirectTo: window.location.origin } }));
-        if (error) throw error;
-        if (!data.session) { setPendingConfirmation(true); setFormSuccess("Check your email for a confirmation link before signing in."); }
-      }
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : "We could not complete sign-in.");
-    } finally { setBusy(false); }
-  };
-
-  const oauth = async (provider: "google" | "lovable") => {
-    setBusy(true); setFormError("");
-    try {
-      const result = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin });
-      if (result.error) throw result.error;
-    } catch (error) { setFormError(error instanceof Error ? error.message : "Could not start sign-in."); setBusy(false); }
-  };
-
-  return (
-    <div className="border border-border bg-card/75 p-4 sm:p-5">
-      <div className="flex items-center justify-between gap-3 border-b border-border/80 pb-3">
-        <h2 className="text-sm font-bold tracking-tight">{mode === "signin" ? "Open your ledger" : "Create your ledger"}</h2>
-        <span className="ledger-mono flex items-center gap-1.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground"><LockKeyhole size={11}/> Private</span>
-      </div>
-      <div className="mt-4 grid gap-2">
-        <Button className="h-10 w-full justify-center gap-3 border-google-border bg-google-surface font-medium text-google-foreground shadow-none hover:bg-google-hover hover:text-google-foreground" variant="outline" disabled={busy} onClick={() => void oauth("google")}><GoogleGlyph/>Continue with Google</Button>
-        <Button className="h-10 w-full justify-center gap-3 border-border bg-background" variant="outline" disabled={busy} onClick={() => void oauth("lovable")}><LovableMark/>Continue with Lovable</Button>
-      </div>
-      <div className="ledger-mono my-4 flex items-center gap-3 text-[9px] uppercase tracking-[0.12em] text-muted-foreground"><span className="h-px flex-1 bg-border"/> or email <span className="h-px flex-1 bg-border"/></div>
-      <form onSubmit={(event) => void onEmail(event)} className="grid gap-3">
-        <div className="grid gap-1.5"><Label className="text-[10px] text-muted-foreground" htmlFor="ledger-email">Email</Label><Input ref={emailRef} autoComplete="email" id="ledger-email" type="email" required placeholder="you@company.com" className="h-10 rounded-none border-border bg-background/70 text-sm placeholder:text-muted-foreground/70" disabled={busy}/></div>
-        <div className="grid gap-1.5"><Label className="text-[10px] text-muted-foreground" htmlFor="ledger-password">Password</Label><Input ref={passwordRef} autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={8} id="ledger-password" type="password" required placeholder="At least 8 characters" className="h-10 rounded-none border-border bg-background/70 text-sm placeholder:text-muted-foreground/70" disabled={busy}/></div>
-        {formError && <p role="alert" className="text-xs leading-relaxed text-coral">{formError}</p>}
-        {formSuccess && <p role="status" className="text-xs leading-relaxed text-signal">{formSuccess}</p>}
-        {pendingConfirmation && <Button type="button" variant="ghost" className="justify-start px-0 text-xs text-primary" onClick={() => { setPendingConfirmation(false); setMode("signin"); setFormSuccess(""); }}>I confirmed my email — sign in</Button>}
-        <Button type="submit" className="mt-1 h-10 w-full justify-between rounded-none text-xs font-bold" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? "Sign in with email" : "Create account"}<ArrowRight size={15}/></Button>
-      </form>
-      <div className="mt-4 border-t border-border/80 pt-3 text-center text-[11px] text-muted-foreground">{mode === "signin" ? "New here?" : "Already have an account?"} <button type="button" className="cursor-pointer font-semibold text-primary underline underline-offset-4" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setFormError(""); setFormSuccess(""); }} disabled={busy}>{mode === "signin" ? "Create an account" : "Sign in"}</button></div>
-      <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[9px] leading-relaxed text-muted-foreground"><LockKeyhole size={10}/> Your uploaded logs stay in private storage.</p>
     </div>
   );
 }
@@ -351,7 +275,7 @@ export function DashboardPage() {
     setFileError("");
     const isJson = file.name.toLowerCase().endsWith(".json") || file.type.includes("json");
     if (!isJson) { setFileError("Choose a .json log file to begin an audit."); return; }
-    if (file.size > 50 * 1024 * 1024) { setFileError("This log exceeds the 50 MB private storage limit."); return; }
+    if (file.size > 50 * 1024 * 1024) { setFileError("This log exceeds the 50 MB testing limit."); return; }
     if (file.size === 0) { setFileError("This JSON file is empty."); return; }
     setBusy(true);
     try {
@@ -386,18 +310,13 @@ export function DashboardPage() {
       <div className="mx-auto max-w-[1240px]">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div><div className="ledger-mono flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-primary"><span className="size-1.5 bg-primary"/> Control assurance <span className="text-border">/</span>01</div><h1 className="mt-3 font-display text-[27px] font-semibold leading-tight tracking-tight sm:text-[32px]">Run audits<span className="text-primary">.</span></h1><p className="mt-2 max-w-lg text-[12px] leading-relaxed text-muted-foreground sm:text-[13px]">A clear evidence trail for your AI agent runs.</p></div>
-          <span className="ledger-mono mt-0.5 inline-flex items-center gap-2 border border-border/80 bg-card/40 px-3 py-2 text-[9px] uppercase tracking-[0.1em] text-muted-foreground"><LockKeyhole size={11} className="text-signal"/> Personal audit space</span>
+          <span className="ledger-mono mt-0.5 inline-flex items-center gap-2 border border-border/80 bg-card/40 px-3 py-2 text-[9px] uppercase tracking-[0.1em] text-muted-foreground">{email ? <LockKeyhole size={11} className="text-signal"/> : <HardDrive size={11} className="text-signal"/>}{email ? "Personal audit space" : "Device-only test space"}</span>
         </div>
 
-        {!email && !loadingRuns ? (
-          <div className="mt-7 grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.8fr)]">
-            <div className="relative flex min-h-[350px] flex-col justify-between overflow-hidden border border-border bg-card/55 p-5 sm:p-7"><div className="pointer-events-none absolute -right-10 top-8 text-[170px] font-bold leading-none text-foreground/[0.025]">01</div><div><div className="ledger-mono flex items-center gap-2 text-[9px] uppercase tracking-[0.15em] text-muted-foreground"><LockKeyhole size={11}/> ACCOUNT REQUIRED FOR PRIVATE LOG STORAGE</div><h2 className="mt-7 max-w-lg text-[24px] font-semibold leading-tight tracking-tight sm:text-[30px]">Bring your run log.<br/>Keep your evidence.</h2><p className="mt-4 max-w-md text-[12px] leading-6 text-muted-foreground">Sign in to create a private audit, compare agent controls, and export a printable evidence-linked report.</p></div><div className="mt-8 grid grid-cols-3 gap-3 border-t border-border/70 pt-4 text-[9px] text-muted-foreground sm:text-[10px]"><span><BadgeCheck size={13} className="mb-1.5 text-primary"/>Four traceable checks</span><span><FileJson2 size={13} className="mb-1.5 text-primary"/>Original JSON retained</span><span><Printer size={13} className="mb-1.5 text-primary"/>Printable audit opinion</span></div></div>
-            <SignInPanel/>
-          </div>
-        ) : (
+        {(
           <>
             <div className="mt-7 grid grid-cols-2 border-y border-border bg-card/40 sm:grid-cols-4">
-              <EvidenceMetric icon={FileJson2} label="Audited runs" value={runs.length.toString().padStart(2,"0")} total="saved privately"/>
+              <EvidenceMetric icon={FileJson2} label="Audited runs" value={runs.length.toString().padStart(2,"0")} total={email ? "saved privately" : "saved on this device"}/>
               <EvidenceMetric icon={ShieldCheck} label="Controls passed" value={totals.pass.toString().padStart(2,"0")} total="across your runs"/>
               <EvidenceMetric icon={ShieldAlert} label="Need attention" value={totals.fail.toString().padStart(2,"0")} total="below threshold"/>
               <EvidenceMetric icon={ShieldQuestion} label="Not evidenced" value={totals.unknown.toString().padStart(2,"0")} total="not measured"/>
@@ -412,24 +331,24 @@ export function DashboardPage() {
                   <h3 className="mt-4 text-sm font-semibold">{busy?"Reviewing your run…":"Drop a JSON log here"}</h3>
                   <p className="mt-2 text-[11px] text-muted-foreground">or select a file from your device</p>
                   <Button type="button" className="mt-5 min-w-36 rounded-none text-xs font-bold" variant="outline" disabled={busy} onClick={(event) => {event.stopPropagation();fileRef.current?.click();}}>Choose JSON file <ArrowRight size={14}/></Button>
-                  <p className="ledger-mono mt-4 flex items-center justify-center gap-1.5 text-[8px] uppercase tracking-[0.09em] text-muted-foreground"><LockKeyhole size={10}/> Private to your account</p>
+                  <p className="ledger-mono mt-4 flex items-center justify-center gap-1.5 text-[8px] uppercase tracking-[0.09em] text-muted-foreground">{email ? <LockKeyhole size={10}/> : <HardDrive size={10}/>} {email ? "Private to your account" : "Saved only on this device for testing"}</p>
                   {busy && <span className="ledger-grain pointer-events-none absolute inset-x-0 bottom-0 h-1 animate-pulse bg-primary/30"/>}
                 </div>
                 {fileError && <div role="alert" className="mt-3 flex items-start gap-2 border border-coral/30 bg-coral/5 p-3 text-[11px] leading-relaxed text-coral"><ShieldAlert size={14} className="mt-0.5 shrink-0"/>{fileError}</div>}
-                <div className="mt-4 flex gap-3 border border-border/60 bg-card/25 px-4 py-3"><span className="ledger-mono pt-0.5 text-[9px] text-primary">↳</span><p className="text-[10px] leading-relaxed text-muted-foreground">Each check is tied to fields found in your log. A hallucination rate is reported only when the file includes an explicit rate or complete per-entry labels.</p></div>
+                <div className="mt-4 flex gap-3 border border-border/60 bg-card/25 px-4 py-3"><span className="ledger-mono pt-0.5 text-[9px] text-primary">↳</span><p className="text-[10px] leading-relaxed text-muted-foreground">{email ? "Each check is tied to fields found in your log. A hallucination rate is reported only when the file includes an explicit rate or complete per-entry labels." : "Each check is tied to fields found in your log. Test uploads are stored only in this browser and are not sent to cloud storage."}</p></div>
                 {latestRun && <div className="mt-6 overflow-hidden border border-border bg-card/50"><div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Most recent audit</span><h3 className="mt-1 truncate text-sm font-bold">{latestRun.run_name}</h3></div><Link to="/report/$auditId" params={{auditId:latestRun.id}} className="inline-flex min-h-9 shrink-0 items-center gap-2 border border-border px-3 text-[10px] font-bold hover:border-primary/50 hover:text-primary">View report <ArrowUpRight size={13}/></Link></div><LatestCheckList run={latestRun}/></div>}
                 <div className="mt-8 border-t border-border/80 pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-bold">Audit history</h2><p className="mt-1 text-[10px] text-muted-foreground">Your saved runs, newest first.</p></div><div className="flex items-center gap-2"><Button variant={filter==="all"?"secondary":"ghost"} size="sm" className="h-8 text-[10px]" onClick={()=>setFilter("all")}>All runs</Button><Button variant={filter==="needs-review"?"secondary":"ghost"} size="sm" className="h-8 text-[10px]" onClick={()=>setFilter("needs-review")}>Needs review</Button></div></div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_190px]"><label className="relative block"><span className="sr-only">Search audit history</span><Input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search runs…" className="h-9 rounded-none border-border/80 bg-background/50 text-[11px]" aria-label="Search audit history"/></label><label className="flex items-center gap-2 text-[9px] text-muted-foreground">Sort: <select aria-label="Sort audit history" value={historySort} onChange={(event)=>setHistorySort(event.target.value as "newest"|"oldest")} className="min-h-9 min-w-0 flex-1 border border-input bg-background px-2 text-[10px] text-foreground"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select><ChevronDown size={12}/></label></div>
                   <div className="mt-3">
-                    {loadingRuns ? <p className="ledger-mono border-y border-border/80 py-6 text-center text-[10px] text-muted-foreground">Loading your private runs…</p> : filteredRuns.length===0 ? <div className="border-y border-border/80 py-6 text-center"><p className="text-[11px] text-muted-foreground">{runs.length===0?"No audit runs yet. Upload a JSON log to get started.":"No runs match these filters."}</p></div> : <div className="ledger-grid-lines grid">{filteredRuns.map((run)=>{const checks=runChecks(run);const fail=checks.filter((check)=>check.status==="fail").length;const unknown=checks.filter((check)=>check.status==="not-evidenced").length;return <div key={run.id} className="flex flex-wrap items-center gap-3 py-3"><div className="flex min-w-0 flex-1 items-center gap-3"><span className={`flex size-8 shrink-0 items-center justify-center border ${fail?"ledger-status-fail":unknown?"ledger-status-unknown":"ledger-status-pass"}`}>{fail?<ShieldAlert size={14}/>:unknown?<ShieldQuestion size={14}/>:<Check size={14}/>}</span><div className="min-w-0"><Link to="/findings/$auditId" params={{auditId:run.id}} className="block truncate text-[11px] font-semibold hover:text-primary">{run.run_name}</Link><span className="ledger-mono mt-1 block truncate text-[9px] text-muted-foreground">{formattedDate(run.created_at,true)} · {run.event_count} {run.event_count===1?"entry":"entries"}</span></div></div><div className="flex items-center gap-2"><span className="ledger-mono text-[9px] text-muted-foreground">{fail?`${fail} fail`:unknown?`${unknown} unevidenced`:"4 pass"}</span><Link aria-label={`Open ${run.run_name} findings`} to="/findings/$auditId" params={{auditId:run.id}} className="flex size-8 items-center justify-center border border-border/70 text-muted-foreground hover:border-primary/70 hover:text-primary"><ArrowUpRight size={14}/></Link><Button aria-label={`Delete ${run.run_name}`} title="Delete this audit and its original log" size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-coral" onClick={()=>void clearHistory(run)}><X size={14}/></Button></div></div>;})}</div>}
+                    {loadingRuns ? <p className="ledger-mono border-y border-border/80 py-6 text-center text-[10px] text-muted-foreground">Loading {email ? "your saved audits" : "device test audits"}…</p> : filteredRuns.length===0 ? <div className="border-y border-border/80 py-6 text-center"><p className="text-[11px] text-muted-foreground">{runs.length===0?"No audit runs yet. Upload a JSON log to get started.":"No runs match these filters."}</p></div> : <div className="ledger-grid-lines grid">{filteredRuns.map((run)=>{const checks=runChecks(run);const fail=checks.filter((check)=>check.status==="fail").length;const unknown=checks.filter((check)=>check.status==="not-evidenced").length;return <div key={run.id} className="flex flex-wrap items-center gap-3 py-3"><div className="flex min-w-0 flex-1 items-center gap-3"><span className={`flex size-8 shrink-0 items-center justify-center border ${fail?"ledger-status-fail":unknown?"ledger-status-unknown":"ledger-status-pass"}`}>{fail?<ShieldAlert size={14}/>:unknown?<ShieldQuestion size={14}/>:<Check size={14}/>}</span><div className="min-w-0"><Link to="/findings/$auditId" params={{auditId:run.id}} className="block truncate text-[11px] font-semibold hover:text-primary">{run.run_name}</Link><span className="ledger-mono mt-1 block truncate text-[9px] text-muted-foreground">{formattedDate(run.created_at,true)} · {run.event_count} {run.event_count===1?"entry":"entries"}</span></div></div><div className="flex items-center gap-2"><span className="ledger-mono text-[9px] text-muted-foreground">{fail?`${fail} fail`:unknown?`${unknown} unevidenced`:"4 pass"}</span><Link aria-label={`Open ${run.run_name} findings`} to="/findings/$auditId" params={{auditId:run.id}} className="flex size-8 items-center justify-center border border-border/70 text-muted-foreground hover:border-primary/70 hover:text-primary"><ArrowUpRight size={14}/></Link><Button aria-label={`Delete this ${email ? "account" : "device"} audit and its original log`} title={email ? "Delete this audit and its original log" : "Delete this device-only test audit"} size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-coral" onClick={()=>void clearHistory(run)}><X size={14}/></Button></div></div>;})}</div>}
                   </div>
                 </div>
               </section>
 
               <aside className="border border-border bg-card/45 p-4 sm:p-5">
                 <div className="flex items-center justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">01 <span className="text-border">/</span> Thresholds</span><h2 className="mt-2 text-sm font-bold">Control standards</h2></div><span className="flex size-8 items-center justify-center border border-border bg-secondary/40 text-muted-foreground"><SlidersHorizontal size={14}/></span></div>
-                <div className="mt-4 border-y border-border/70 py-2"><ThresholdEditor thresholds={thresholds} onChange={setThresholds} disabled={!email}/></div>
-                {!email && <p className="mt-3 flex items-start gap-2 text-[10px] leading-relaxed text-review"><LockKeyhole size={12} className="mt-0.5 shrink-0"/> Sign in to change standards and save private run history.</p>}
+                <div className="mt-4 border-y border-border/70 py-2"><ThresholdEditor thresholds={thresholds} onChange={setThresholds}/></div>
+                {!email && <p className="mt-3 flex items-start gap-2 text-[10px] leading-relaxed text-review"><HardDrive size={12} className="mt-0.5 shrink-0"/> Testing without sign-in. Audits stay in this browser and are not uploaded to account storage.</p>}
                 <div className="mt-5 border-t border-border/70 pt-4"><h3 className="flex items-center gap-2 text-[11px] font-semibold"><ShieldCheck size={14} className="text-primary"/> How evidence is checked</h3><div className="mt-3 grid gap-3 text-[10px] leading-relaxed text-muted-foreground"><p><span className="font-semibold text-foreground/80">Traceability</span> — a stable ID or timestamp identifies the entry.</p><p><span className="font-semibold text-foreground/80">Versioning</span> — model or agent version is recorded in the entry.</p><p><span className="font-semibold text-foreground/80">Hallucinations</span> — an explicit rate or complete set of entry-level labels is present.</p><p><span className="font-semibold text-foreground/80">Oversight</span> — review, reviewer, or approval fields are recorded.</p></div><div className="mt-4 border-l-2 border-review/50 bg-review/5 py-2 pl-3 pr-2"><p className="flex items-center gap-1.5 text-[9px] font-semibold text-review"><ShieldQuestion size={11}/> Missing evidence is never a pass.</p><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">These checks support internal review; they are not independent verification or a compliance certification.</p></div></div>
               </aside>
             </div>
@@ -459,8 +378,8 @@ export function FindingsPage({ auditId }: { auditId: string }) {
   const events = useMemo(() => run ? extractAuditEvents(runSource(run)) : [], [run]);
   const checks = run ? runChecks(run) : [];
 
-  if (!run && loadingRuns) return <AppFrame active="findings"><div className="ledger-mono py-14 text-center text-xs text-muted-foreground">Loading your private audit…</div></AppFrame>;
-  if (!run) return <AppFrame active="findings"><div className="mx-auto max-w-xl border border-border bg-card p-6 text-center sm:p-10"><LockKeyhole size={19} className="mx-auto text-review"/><h1 className="mt-4 text-lg font-bold">{email?"Audit not found":"Sign in to view private findings"}</h1><p className="mt-2 text-xs leading-relaxed text-muted-foreground">This audit may have been removed or belongs to another account. Private run records are never shared between users.</p><Link className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-primary hover:text-foreground" to="/">Return to dashboard <ArrowLeft size={14}/></Link></div></AppFrame>;
+  if (!run && loadingRuns) return <AppFrame active="findings"><div className="ledger-mono py-14 text-center text-xs text-muted-foreground">Loading {email ? "your private audit" : "device test audit"}…</div></AppFrame>;
+  if (!run) return <AppFrame active="findings"><div className="mx-auto max-w-xl border border-border bg-card p-6 text-center sm:p-10"><LockKeyhole size={19} className="mx-auto text-review"/><h1 className="mt-4 text-lg font-bold">{email?"Audit not found":"Device test audit not found"}</h1><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{email?"This audit may have been removed or belongs to another account. Private run records are never shared between users.":"This test audit is available only in the browser where it was created. Upload the JSON again to review it here."}</p><Link className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-primary hover:text-foreground" to="/">Return to dashboard <ArrowLeft size={14}/></Link></div></AppFrame>;
 
   return (
     <AppFrame active="findings">
@@ -491,7 +410,7 @@ export function FindingsPage({ auditId }: { auditId: string }) {
             return <section key={check.id} className="border border-border/80 bg-card/40"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-3 py-3 sm:px-4"><div className="flex min-w-0 items-center gap-3"><span className="ledger-mono text-[9px] text-muted-foreground">0{index+1}</span><span className="flex size-8 shrink-0 items-center justify-center border border-border bg-secondary/40 text-muted-foreground"><Icon size={15}/></span><div className="min-w-0"><h3 className="truncate text-[11px] font-bold">{check.name}</h3><p className="mt-0.5 truncate text-[9px] text-muted-foreground">{check.summary}</p></div></div><StatusPill status={check.status}/></div><div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4"><div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5"><span className="ledger-mono text-[9px] text-muted-foreground">Observed <strong className="ml-1 font-semibold text-foreground">{formatPercent(check.measured)}</strong></span><span className="ledger-mono text-[9px] text-muted-foreground">Threshold <strong className="ml-1 font-semibold text-foreground">{check.direction==="minimum"?"≥":"≤"} {check.threshold}%</strong></span><span className="text-[9px] text-muted-foreground">{check.message}</span></div><div className="flex shrink-0 flex-wrap gap-2">{anchors.length>0?anchors.slice(0,2).map((entryIndex)=> <a key={entryIndex} href={`#source-entry-${entryIndex}`} className="inline-flex min-h-7 items-center gap-1.5 border border-primary/25 bg-accent/40 px-2 text-[9px] font-semibold text-primary hover:bg-accent">{events[entryIndex]?.label??`Entry ${entryIndex+1}`} <ArrowDown size={10}/></a>):isUnknown?<span className="flex min-h-7 items-center gap-1.5 border border-review/25 px-2 text-[9px] text-review"><ShieldQuestion size={10}/> No supporting entry</span>:<span className="flex min-h-7 items-center gap-1.5 border border-border px-2 text-[9px] text-muted-foreground">No matching fields</span>}{anchors.length>2&&<span className="self-center text-[9px] text-muted-foreground">+{anchors.length-2} more</span>}</div></div></section>;
           })}
         </div>
-        <div className="mt-9 border-t border-border/80 pt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">02 <span className="text-border">/</span> Evidence</span><h2 className="mt-2 text-sm font-bold">Original log entries</h2></div><span className="ledger-mono text-[9px] uppercase tracking-[0.08em] text-muted-foreground">{events.length} source {events.length===1?"entry":"entries"}</span></div><p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Linked findings jump directly to the exact entry and source field. The original uploaded JSON is retained privately.</p></div>
+        <div className="mt-9 border-t border-border/80 pt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">02 <span className="text-border">/</span> Evidence</span><h2 className="mt-2 text-sm font-bold">Original log entries</h2></div><span className="ledger-mono text-[9px] uppercase tracking-[0.08em] text-muted-foreground">{events.length} source {events.length===1?"entry":"entries"}</span></div><p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Linked findings jump directly to the exact entry and source field. {email ? "The original uploaded JSON is retained privately." : "The test JSON stays in this browser and is not uploaded to cloud storage."}</p></div>
         {events.length===0?<div className="mt-4 border border-border px-4 py-5 text-xs text-muted-foreground">No original entries were found in this run.</div>:<div className="ledger-grid-lines mt-4 grid border-y border-border/80" id="evidence">{events.map((event,index)=>{const evidenceForEntry=checks.filter((check)=>check.evidencePaths.some((path)=>path===event.path||path.startsWith(`${event.path}.`)));return <details key={index} id={`source-entry-${index}`} className="scroll-mt-20 group py-1 marker:content-none open:pb-3"><summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 py-2 hover:text-primary [&::-webkit-details-marker]:hidden"><span className="ledger-mono min-w-[40px] text-[9px] text-muted-foreground">{`E-${String(index+1).padStart(3,"0")}`}</span><span className="flex size-6 shrink-0 items-center justify-center border border-border/70 bg-secondary/30 text-muted-foreground group-open:text-primary"><ChevronDown size={12} className="transition-transform group-open:rotate-180"/></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold">{event.label}</span><span className="hidden min-w-0 max-w-[40%] truncate text-right text-[9px] text-muted-foreground sm:block">{formatEvidencePath(event.path)}</span>{evidenceForEntry.map((check)=><span key={check.id} className="hidden sm:inline-block"><StatusPill status={check.status}/></span>)}</summary><div className="ml-[52px] grid min-w-0 gap-2 pb-3"><div className="border-l border-primary/45 bg-background/55 p-3 sm:p-4"><div className="ledger-mono mb-2 flex flex-wrap justify-between gap-2 text-[9px] text-muted-foreground"><span>EXACT SOURCE <span className="text-border">/</span> {event.path}</span><span>{evidenceForEntry.map((check)=>check.name).join(" · ")||"No control fields matched"}</span></div><pre className="ledger-mono max-h-[460px] overflow-auto whitespace-pre-wrap break-words text-[9px] leading-relaxed text-foreground/90 sm:text-[10px]">{JSON.stringify(event.value,null,2)}</pre></div>{evidenceForEntry.flatMap((check)=>check.evidencePaths.filter((path)=>path===event.path||path.startsWith(`${event.path}.`)).map((path)=> <div key={`${check.id}-${path}`} className="flex flex-wrap items-center gap-2 text-[9px]"><span className="text-primary">{check.name}</span><span className="text-muted-foreground">← {formatEvidencePath(path)}</span></div>))}</div></details>;})}</div>}
         <div className="mt-5 border-l-2 border-review/50 bg-review/5 p-3 sm:p-4"><div className="flex items-center gap-2 text-[10px] font-semibold text-review"><ShieldQuestion size={13}/> Important: Evidence is not certification.</div><p className="mt-1.5 max-w-4xl text-[10px] leading-relaxed text-muted-foreground">Results describe only the JSON provided and the selected thresholds. A missing hallucination label is reported as “Not evidenced”—not assumed to be zero. Human review is credited only when review or approval is explicitly recorded.</p></div>
       </div>
@@ -504,7 +423,7 @@ export function ReportPage({ auditId }: { auditId: string }) {
   const run = runs.find((item)=>item.id===auditId);
   const checks=run?runChecks(run):[];
   if(!run&&loadingRuns)return <AppFrame active="report"><p className="ledger-mono py-10 text-center text-xs text-muted-foreground">Preparing your report…</p></AppFrame>;
-  if(!run)return <AppFrame active="report"><div className="mx-auto max-w-lg border border-border bg-card p-8 text-center"><LockKeyhole className="mx-auto text-review"/><h1 className="mt-4 text-lg font-bold">{email?"Report not found":"Sign in to view your audit report"}</h1><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Private audit reports can be viewed only by their owner.</p><Link to="/" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-primary"><ArrowLeft size={14}/> Dashboard</Link></div></AppFrame>;
+  if(!run)return <AppFrame active="report"><div className="mx-auto max-w-lg border border-border bg-card p-8 text-center"><LockKeyhole className="mx-auto text-review"/><h1 className="mt-4 text-lg font-bold">{email?"Report not found":"Device test report not found"}</h1><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{email?"Private audit reports can be viewed only by their owner.":"This test report is available only in the browser where it was created."}</p><Link to="/" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-primary"><ArrowLeft size={14}/> Dashboard</Link></div></AppFrame>;
   const opinion=auditOpinion(checks);
   const thresholds=runThresholds(run);
   const generated=formattedDate(run.created_at);
@@ -516,7 +435,7 @@ export function ReportPage({ auditId }: { auditId: string }) {
   <div className="ledger-report mx-auto max-w-[820px] bg-background text-foreground">
     <header className="flex items-start justify-between gap-4 border-b-2 border-foreground/80 pb-7">
       <div><div className="flex items-center gap-2 text-primary"><ShieldCheck size={18}/><span className="ledger-mono text-[10px] font-semibold uppercase tracking-[0.2em]">AgentLedger / Run assurance</span></div><h1 className="mt-8 text-4xl font-bold tracking-tight">AI agent run<br/>audit report<span className="text-primary">.</span></h1><p className="mt-4 max-w-md text-sm text-muted-foreground">Evidence-linked control review based solely on the supplied JSON log.</p></div>
-      <span className="ledger-mono ledger-print-inline-flex border border-border px-3 py-2 text-center text-[10px] uppercase tracking-[0.14em]">PRIVATE<br/><span className="ledger-print-inline text-primary">OWNER ONLY</span></span>
+      <span className="ledger-mono ledger-print-inline-flex border border-border px-3 py-2 text-center text-[10px] uppercase tracking-[0.14em]">{isGuestAuditRun(run) ? <>LOCAL TEST<br/><span className="ledger-print-inline text-primary">DEVICE ONLY</span></> : <>PRIVATE<br/><span className="ledger-print-inline text-primary">OWNER ONLY</span></>}</span>
     </header>
     <section className="ledger-print-grid grid grid-cols-2 gap-x-5 gap-y-5 border-b border-border py-7 sm:grid-cols-4"><div className="col-span-2 min-w-0"><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Agent run</span><p className="mt-2 break-words text-lg font-bold">{run.run_name}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Source file</span><p className="mt-2 break-words text-xs">{run.source_filename}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Entries reviewed</span><p className="ledger-mono mt-2 text-sm">{run.event_count.toString().padStart(2,"0")}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Audit ID</span><p className="ledger-mono mt-2 break-all text-[10px]">{run.id}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Report generated</span><p className="mt-2 text-xs">{generated}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Overall opinion</span><p className="mt-2 text-xs font-bold">{opinion.title}</p></div></section>
     <aside className="my-7 border-l-[3px] border-primary bg-secondary/55 px-5 py-5"><span className="ledger-mono text-[9px] uppercase tracking-[0.15em] text-primary">01 <span className="text-border">/</span> Audit opinion</span><h2 className="mt-3 text-lg font-bold">{opinion.title}</h2><p className="mt-2 max-w-3xl text-xs leading-relaxed text-muted-foreground">{opinion.explanation}</p></aside>
