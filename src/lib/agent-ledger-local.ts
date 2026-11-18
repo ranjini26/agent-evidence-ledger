@@ -3,6 +3,7 @@ import {
   DEFAULT_THRESHOLDS,
   auditOpinion,
   extractAuditEvents,
+  scoreAudit,
   type AuditCheck,
   type AuditThresholds,
 } from "@/lib/agent-ledger";
@@ -13,6 +14,7 @@ export type GuestAuditRun = Tables<"audit_runs">;
 const DATABASE_NAME = "agentledger-device-tests";
 const STORE_NAME = "audits";
 export const GUEST_THRESHOLDS_KEY = "agentledger:device-test-thresholds";
+export const GUEST_DEMO_SEEDED_KEY = "agentledger:sample-audits-seeded";
 
 interface ThresholdStorage {
   getItem(key: string): string | null;
@@ -67,8 +69,56 @@ export function createGuestAuditRun(
   };
 }
 
+export function createGuestDemoAudits(now = new Date()): GuestAuditRun[] {
+  const scenarios = [
+    { id: "complete-evidence", name: "SAMPLE · Well-governed support run", traceable: 10, versioned: 10, hallucinations: 0, reviewed: 2 },
+    { id: "traceability-gap", name: "SAMPLE · Untracked tool execution", traceable: 7, versioned: 10, hallucinations: 0, reviewed: 2 },
+    { id: "version-drift", name: "SAMPLE · Model version drift", traceable: 10, versioned: 8, hallucinations: 0, reviewed: 2 },
+    { id: "high-hallucination-rate", name: "SAMPLE · High hallucination rate", traceable: 10, versioned: 10, hallucinations: 2, reviewed: 2 },
+    { id: "oversight-gap", name: "SAMPLE · Human review missing", traceable: 10, versioned: 10, hallucinations: 0, reviewed: 0 },
+    { id: "hallucination-not-measured", name: "SAMPLE · Hallucination evidence missing", traceable: 10, versioned: 10, hallucinations: null, reviewed: 2 },
+  ] as const;
+
+  return scenarios.map((scenario, index) => {
+    const events = Array.from({ length: 10 }, (_unused, eventIndex) => ({
+      ...(eventIndex < scenario.traceable ? { event_id: `${scenario.id}-${eventIndex + 1}` } : {}),
+      ...(eventIndex < scenario.versioned ? { model_version: "agent-v3.2" } : {}),
+      ...(scenario.hallucinations === null ? {} : { is_hallucination: eventIndex < scenario.hallucinations }),
+      ...(eventIndex < scenario.reviewed ? { human_review: true } : {}),
+    }));
+    const source = { run_id: `sample-${scenario.id}`, scenario: scenario.name, events } as Json;
+    const checks = scoreAudit(extractAuditEvents(source), DEFAULT_THRESHOLDS, source);
+    const createdAt = new Date(now.getTime() - index * 24 * 60 * 60 * 1000).toISOString();
+
+    return createGuestAuditRun(
+      `${scenario.id}.json`,
+      source,
+      checks,
+      scenario.name,
+      DEFAULT_THRESHOLDS,
+      `demo-${scenario.id}`,
+      createdAt,
+    );
+  });
+}
+
+export async function ensureGuestDemoAudits(storage: ThresholdStorage): Promise<GuestAuditRun[]> {
+  const existing = await loadGuestAudits();
+  if (storage.getItem(GUEST_DEMO_SEEDED_KEY) === "true") return existing;
+
+  const existingIds = new Set(existing.map((run) => run.id));
+  const missingSamples = createGuestDemoAudits().filter((run) => !existingIds.has(run.id));
+  for (const sample of missingSamples) await saveGuestAudit(sample);
+  storage.setItem(GUEST_DEMO_SEEDED_KEY, "true");
+  return missingSamples.length > 0 ? loadGuestAudits() : existing;
+}
+
 export function isGuestAuditRun(run: GuestAuditRun): boolean {
   return run.storage_path.startsWith("device-only://");
+}
+
+export function isGuestDemoAuditRun(run: GuestAuditRun): boolean {
+  return run.id.startsWith("local-demo-");
 }
 
 function openGuestDatabase(): Promise<IDBDatabase> {

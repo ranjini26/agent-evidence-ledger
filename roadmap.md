@@ -8,3 +8,4 @@
 - [x] Recover once from stale JavaScript module loads and keep retry failures from looping.
 - [x] Recheck the real audit journey across all control findings, source links, readable reports, desktop, phone, and print.
 - [x] Remove the sign-in gate for temporary testing; keep test runs in browser-only storage and verify upload, findings, reports, and history.
+- [x] Add at least five labeled, device-only sample audit results to the dashboard for common test scenarios.

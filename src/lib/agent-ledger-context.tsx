@@ -12,6 +12,7 @@ import { extractAuditEvents, type AuditCheck, type AuditThresholds } from "@/lib
 import {
   createGuestAuditRun,
   deleteGuestAudit,
+  ensureGuestDemoAudits,
   isGuestAuditRun,
   loadGuestAudits,
   readGuestThresholds,
@@ -104,7 +105,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       if (TEMPORARY_DEVICE_ONLY_TEST_MODE) {
         try {
           const [guestRuns, savedThresholds] = await Promise.all([
-            loadGuestAudits(),
+            ensureGuestDemoAudits(window.localStorage),
             Promise.resolve(readGuestThresholds(window.localStorage)),
           ]);
           if (!cancelled) {
@@ -132,7 +133,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       }
       try {
         const [guestRuns, savedThresholds] = await Promise.all([
-          loadGuestAudits(),
+          ensureGuestDemoAudits(window.localStorage),
           Promise.resolve(readGuestThresholds(window.localStorage)),
         ]);
         if (!cancelled) {
@@ -162,7 +163,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           } else {
             try {
               const [guestRuns, guestThresholds] = await Promise.all([
-                loadGuestAudits(),
+                ensureGuestDemoAudits(window.localStorage),
                 Promise.resolve(readGuestThresholds(window.localStorage)),
               ]);
               setRuns(guestRuns);

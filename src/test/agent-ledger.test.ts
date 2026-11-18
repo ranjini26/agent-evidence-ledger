@@ -5,7 +5,7 @@ import {
   extractAuditEvents,
   scoreAudit,
 } from "@/lib/agent-ledger";
-import { createGuestAuditRun, isGuestAuditRun, readGuestThresholds } from "@/lib/agent-ledger-local";
+import { createGuestAuditRun, createGuestDemoAudits, isGuestAuditRun, isGuestDemoAuditRun, readGuestThresholds } from "@/lib/agent-ledger-local";
 
 describe("AgentLedger evidence checks", () => {
   it("distinguishes a missing hallucination measurement from a zero rate", () => {
@@ -120,5 +120,22 @@ describe("AgentLedger evidence checks", () => {
     expect(run.id).toBe("local-test-id");
     expect(isGuestAuditRun(run)).toBe(true);
     expect(run.storage_path).toBe("device-only://test-id.json");
+  });
+
+  it("provides six device-only sample audits with distinct test outcomes", () => {
+    const samples = createGuestDemoAudits(new Date("2026-11-18T12:00:00.000Z"));
+    const outcomes = samples.map((run) => [run.run_name, (run.checks as unknown as { id: string; status: string }[]).map(({ id, status }) => `${id}:${status}`)]);
+
+    expect(samples).toHaveLength(6);
+    expect(outcomes).toEqual([
+      ["SAMPLE · Well-governed support run", ["traceability:pass", "versioning:pass", "hallucinations:pass", "oversight:pass"]],
+      ["SAMPLE · Untracked tool execution", ["traceability:fail", "versioning:pass", "hallucinations:pass", "oversight:pass"]],
+      ["SAMPLE · Model version drift", ["traceability:pass", "versioning:fail", "hallucinations:pass", "oversight:pass"]],
+      ["SAMPLE · High hallucination rate", ["traceability:pass", "versioning:pass", "hallucinations:fail", "oversight:pass"]],
+      ["SAMPLE · Human review missing", ["traceability:pass", "versioning:pass", "hallucinations:pass", "oversight:fail"]],
+      ["SAMPLE · Hallucination evidence missing", ["traceability:pass", "versioning:pass", "hallucinations:not-evidenced", "oversight:pass"]],
+    ]);
+    expect(samples.every((run) => isGuestAuditRun(run) && isGuestDemoAuditRun(run))).toBe(true);
+    expect(samples.every((run) => run.event_count === 10)).toBe(true);
   });
 });

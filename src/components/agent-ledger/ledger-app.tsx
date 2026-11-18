@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAgentLedger, type AuditRun } from "@/lib/agent-ledger-context";
-import { isGuestAuditRun } from "@/lib/agent-ledger-local";
+import { isGuestAuditRun, isGuestDemoAuditRun } from "@/lib/agent-ledger-local";
 import {
   DEFAULT_THRESHOLDS, auditOpinion, extractAuditEvents, formatEvidencePath,
   scoreAudit, type AuditCheck, type AuditThresholds, type AuditStatus,
@@ -255,6 +255,7 @@ export function DashboardPage() {
   const [filter, setFilter] = useState<"all" | "needs-review">("all");
   const [historySort, setHistorySort] = useState<"newest" | "oldest">("newest");
   const latestRun = runs[0] ?? null;
+  const sampleRunCount = runs.filter(isGuestDemoAuditRun).length;
   const filteredRuns = useMemo(() => runs.filter((run) =>
     run.run_name.toLowerCase().includes(query.toLowerCase()) &&
     (filter === "all" || runChecks(run).some((check) => check.status !== "pass")),
@@ -312,6 +313,8 @@ export function DashboardPage() {
           <div><div className="ledger-mono flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-primary"><span className="size-1.5 bg-primary"/> Control assurance <span className="text-border">/</span>01</div><h1 className="mt-3 font-display text-[27px] font-semibold leading-tight tracking-tight sm:text-[32px]">Run audits<span className="text-primary">.</span></h1><p className="mt-2 max-w-lg text-[12px] leading-relaxed text-muted-foreground sm:text-[13px]">A clear evidence trail for your AI agent runs.</p></div>
           <span className="ledger-mono mt-0.5 inline-flex items-center gap-2 border border-border/80 bg-card/40 px-3 py-2 text-[9px] uppercase tracking-[0.1em] text-muted-foreground">{email ? <LockKeyhole size={11} className="text-signal"/> : <HardDrive size={11} className="text-signal"/>}{email ? "Personal audit space" : "Device-only test space"}</span>
         </div>
+
+        {sampleRunCount > 0 && <div className="mt-5 flex items-start gap-3 border-l-2 border-review/60 bg-review/5 px-3 py-3 sm:px-4"><Sparkles size={14} className="mt-0.5 shrink-0 text-review" aria-hidden="true"/><p className="text-[10px] leading-relaxed text-muted-foreground"><strong className="font-semibold text-foreground">{sampleRunCount} sample audits are ready.</strong> These generated examples cover passing controls, traceability and version gaps, a high hallucination rate, missing oversight, and unmeasured hallucinations. They are marked “SAMPLE” and stay on this device; remove them individually from audit history.</p></div>}
 
         {(
           <>
