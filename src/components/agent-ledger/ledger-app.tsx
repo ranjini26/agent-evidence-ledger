@@ -475,7 +475,14 @@ export function FindingsPage({ auditId }: { auditId: string }) {
           <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{auditOpinion(checks).explanation}</p>
         </div>
         <div className="mt-8 flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">01 <span className="text-border">/</span> Results</span><h2 className="mt-2 text-sm font-bold">Control checklist</h2></div><p className="text-right text-[9px] leading-relaxed text-muted-foreground">Original thresholds are preserved<br/>with this audit.</p></div>
-        <div className="mt-3 grid gap-2">
+        <div className="mt-3 grid gap-2" onClick={(event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const link = target.closest<HTMLAnchorElement>('a[href^="#source-entry-"]');
+          const entryId = link?.hash.slice(1);
+          const source = entryId ? document.getElementById(entryId) : null;
+          if (source instanceof HTMLDetailsElement) source.open = true;
+        }}>
           {checks.map((check,index)=>{
             const Icon=iconsByControl[check.id];
             const uniquePaths=[...new Set(check.evidencePaths)];

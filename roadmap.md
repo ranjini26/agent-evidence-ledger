@@ -6,3 +6,4 @@
 - [x] Finish the linked findings and printable report pages.
 - [x] Run audit tests, review app diagnostics, and commit the finished changes.
 - [x] Recover once from stale JavaScript module loads and keep retry failures from looping.
+- [ ] Recheck the real audit journey across all control findings, source links, readable reports, desktop, phone, and print.

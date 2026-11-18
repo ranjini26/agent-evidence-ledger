@@ -203,7 +203,7 @@
 .ledger-dropzone-active { border-color: var(--color-primary); background-color: color-mix(in oklab, var(--color-primary) 7%, var(--color-card)); }
 .ledger-file-input { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
 .ledger-grid-lines > :not(:last-child) { border-bottom: 1px solid var(--color-border); }
-.ledger-report { display: none; }
+.ledger-report { display: block; }
 
 @media print {
   :root { color-scheme: light; --background: oklch(1 0 0); --foreground: oklch(0.2 0.015 250); --card: oklch(1 0 0); --card-foreground: oklch(0.2 0.015 250); --muted: oklch(0.96 0.005 250); --muted-foreground: oklch(0.43 0.012 250); --border: oklch(0.82 0.005 250); }
