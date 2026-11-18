@@ -14,4 +14,15 @@ describe("App routing", () => {
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
+
+  it("registers the source-linked findings and printable audit pages", () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+
+    expect(router.matchRoutes("/findings/audit-123").at(-1)?.routeId).toBe(
+      "/findings/$auditId",
+    );
+    expect(router.matchRoutes("/report/audit-123").at(-1)?.routeId).toBe(
+      "/report/$auditId",
+    );
+  });
 });

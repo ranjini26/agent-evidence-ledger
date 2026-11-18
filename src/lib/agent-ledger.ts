@@ -99,6 +99,29 @@ function isRecordedHumanOversight(field: { key: string; value: unknown }): boole
   return true;
 }
 
+function isTraceabilityEvidence(field: { key: string; value: unknown }): boolean {
+  if (!IDENTIFIER_KEYS.has(field.key) && !TIME_KEYS.has(field.key)) return false;
+  if (typeof field.value === "string") {
+    const value = field.value.trim();
+    if (!value || /^(unknown|null|none|undefined)$/i.test(value)) return false;
+    return IDENTIFIER_KEYS.has(field.key) || Number.isFinite(Date.parse(value));
+  }
+  if (typeof field.value === "number" && Number.isFinite(field.value)) {
+    return !TIME_KEYS.has(field.key) || Math.abs(field.value) > 0;
+  }
+  return false;
+}
+
+function isRecordedVersion(field: { key: string; value: unknown }): boolean {
+  if (!VERSION_KEYS.has(field.key) || !scalarIsPresent(field.value)) return false;
+  if (typeof field.value === "boolean") return false;
+  if (typeof field.value === "number") return Number.isFinite(field.value) && field.value > 0;
+  if (typeof field.value === "string") {
+    return !/^(unknown|null|none|undefined|unversioned|n\/a|latest)$/i.test(field.value.trim());
+  }
+  return false;
+}
+
 function collectFields(value: unknown, path: string, depth = 0): Array<{ key: string; value: unknown; path: string }> {
   if (depth > 4 || value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, item]) => {
@@ -157,13 +180,8 @@ export function scoreAudit(
   source?: unknown,
 ): AuditCheck[] {
   const fieldsByEvent = events.map((event) => collectFields(event.value, event.path));
-  const traced = fieldsByEvent.map((fields) =>
-    fields.some((field) => IDENTIFIER_KEYS.has(field.key) && scalarIsPresent(field.value)) ||
-    fields.some((field) => TIME_KEYS.has(field.key) && scalarIsPresent(field.value)),
-  );
-  const versioned = fieldsByEvent.map((fields) =>
-    fields.some((field) => VERSION_KEYS.has(field.key) && scalarIsPresent(field.value)),
-  );
+  const traced = fieldsByEvent.map((fields) => fields.some(isTraceabilityEvidence));
+  const versioned = fieldsByEvent.map((fields) => fields.some(isRecordedVersion));
   const oversight = fieldsByEvent.map((fields) => fields.some(isRecordedHumanOversight));
 
   const rates = fieldsByEvent.flatMap((fields) =>
@@ -208,8 +226,8 @@ export function scoreAudit(
     const evidencePaths = fieldsByEvent.flatMap((fields, index) =>
       present[index]
         ? fields.filter((field) => {
-            if (id === "traceability") return IDENTIFIER_KEYS.has(field.key) || TIME_KEYS.has(field.key);
-            if (id === "versioning") return VERSION_KEYS.has(field.key);
+            if (id === "traceability") return isTraceabilityEvidence(field);
+            if (id === "versioning") return isRecordedVersion(field);
             return isRecordedHumanOversight(field);
           }).map((field) => field.path)
         : [],

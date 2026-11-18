@@ -79,6 +79,21 @@ describe("AgentLedger evidence checks", () => {
     );
   });
 
+  it("does not treat false IDs, dates, or version placeholders as evidence", () => {
+    const events = extractAuditEvents([
+      { event_id: false, timestamp: "unknown", model_version: "unversioned", human_review: false },
+    ]);
+    const checks = scoreAudit(events);
+
+    expect(checks.map(({ status }) => status)).toEqual([
+      "fail",
+      "fail",
+      "not-evidenced",
+      "fail",
+    ]);
+    expect(checks.find(({ id }) => id === "traceability")?.evidencePaths).toEqual([]);
+  });
+
   it("requires an explicit usable event list and rejects scalar input", () => {
     expect(extractAuditEvents({ events: [] })).toEqual([]);
     expect(() => extractAuditEvents("not a run log")).toThrow(

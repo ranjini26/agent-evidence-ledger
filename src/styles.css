@@ -208,8 +208,15 @@
 @media print {
   :root { color-scheme: light; --background: oklch(1 0 0); --foreground: oklch(0.2 0.015 250); --card: oklch(1 0 0); --card-foreground: oklch(0.2 0.015 250); --muted: oklch(0.96 0.005 250); --muted-foreground: oklch(0.43 0.012 250); --border: oklch(0.82 0.005 250); }
   body, .ledger-shell { background: white !important; color: var(--foreground) !important; }
-  .ledger-screen, .ledger-hide-on-print { display: none !important; }
+  .ledger-app-sidebar, .ledger-app-main > header, .ledger-app-main > footer, .ledger-screen, .ledger-hide-on-print { display: none !important; }
+  .ledger-app-frame { display: block !important; min-height: initial !important; max-width: none !important; }
+  .ledger-app-main { display: block !important; }
   .ledger-report { display: block !important; }
+  .ledger-report * { display: revert !important; }
+  .ledger-report header, .ledger-report section, .ledger-report footer, .ledger-report aside { display: block !important; }
+  .ledger-report .ledger-print-grid { display: grid !important; }
+  .ledger-report .ledger-print-inline { display: inline !important; }
+  .ledger-report .ledger-print-inline-flex { display: inline-flex !important; }
   .ledger-report * { color: var(--foreground) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   a[href]::after { content: none !important; }
   @page { margin: 17mm; }
