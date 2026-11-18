@@ -5,3 +5,4 @@
 - [x] Build transparent JSON-log scoring with tests and the audit workspace.
 - [x] Finish the linked findings and printable report pages.
 - [x] Run audit tests, review app diagnostics, and commit the finished changes.
+- [x] Recover once from stale JavaScript module loads and keep retry failures from looping.

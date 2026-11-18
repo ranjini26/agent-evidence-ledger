@@ -41,6 +41,9 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
+  const isModuleLoadFailure = /importing a module script failed|failed to fetch dynamically imported module|error loading dynamically imported module|unable to preload css/i.test(
+    error instanceof Error ? error.message : String(error),
+  );
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
@@ -57,12 +60,16 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
+              if (isModuleLoadFailure) {
+                window.location.reload();
+                return;
+              }
               router.invalidate();
               reset();
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            {isModuleLoadFailure ? "Reload app" : "Try again"}
           </button>
           <a
             href="/"
@@ -129,6 +136,28 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    const retryKey = "agentledger:module-load-retry";
+    const recoverFromStaleModule = (event: Event) => {
+      try {
+        if (window.sessionStorage.getItem(retryKey) === "1") return;
+        window.sessionStorage.setItem(retryKey, "1");
+        event.preventDefault();
+        window.location.reload();
+      } catch {
+        event.preventDefault();
+        window.location.reload();
+      }
+    };
+
+    window.addEventListener("vite:preloadError", recoverFromStaleModule);
+    const retryResetTimer = window.setTimeout(() => {
+      try {
+        window.sessionStorage.removeItem(retryKey);
+      } catch {
+        // Storage may be disabled; the reload guard can safely expire with the tab.
+      }
+    }, 30_000);
+
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       window.dispatchEvent(new CustomEvent("agentledger:auth-transition"));
@@ -136,7 +165,11 @@ function RootComponent() {
       if (event !== "SIGNED_OUT") void queryClient.invalidateQueries();
     });
 
-    return () => data.subscription.unsubscribe();
+    return () => {
+      window.removeEventListener("vite:preloadError", recoverFromStaleModule);
+      window.clearTimeout(retryResetTimer);
+      data.subscription.unsubscribe();
+    };
   }, [queryClient, router]);
 
   return (
