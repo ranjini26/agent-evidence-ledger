@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -45,7 +38,12 @@ interface AuditLedgerContextValue {
   error: string;
   setThresholds: (thresholds: AuditThresholds) => void;
   clearError: () => void;
-  importRun: (filename: string, log: Json, checks: ControlResult[], runName: string) => Promise<AuditRun>;
+  importRun: (
+    filename: string,
+    log: Json,
+    checks: ControlResult[],
+    runName: string,
+  ) => Promise<AuditRun>;
   removeRun: (run: AuditRun) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -123,7 +121,11 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           }
         } catch (guestError) {
           if (!cancelled) {
-            setError(guestError instanceof Error ? guestError.message : "Could not open the device-only test workspace.");
+            setError(
+              guestError instanceof Error
+                ? guestError.message
+                : "Could not open the device-only test workspace.",
+            );
             setRuns([]);
           }
         } finally {
@@ -151,7 +153,11 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         }
       } catch (guestError) {
         if (!cancelled) {
-          setError(guestError instanceof Error ? guestError.message : "Could not open the device-only test workspace.");
+          setError(
+            guestError instanceof Error
+              ? guestError.message
+              : "Could not open the device-only test workspace.",
+          );
           setRuns([]);
         }
       } finally {
@@ -196,26 +202,33 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }, [refreshRuns]);
 
   /** Append to the on-device ledger. A failure is shown but does not undo the save. */
-  const recordInLedger = useCallback(async (run: AuditRun, kind: "audit_recorded" | "audit_deleted") => {
-    try {
-      await recordRunInLedger(run, kind);
-    } catch (ledgerError) {
-      setError(
-        `The audit was ${kind === "audit_recorded" ? "saved" : "deleted"}, but it could not be added to the ledger: ${
-          ledgerError instanceof Error ? ledgerError.message : "unknown error"
-        }`,
-      );
-    }
-  }, []);
+  const recordInLedger = useCallback(
+    async (run: AuditRun, kind: "audit_recorded" | "audit_deleted") => {
+      try {
+        await recordRunInLedger(run, kind);
+      } catch (ledgerError) {
+        setError(
+          `The audit was ${kind === "audit_recorded" ? "saved" : "deleted"}, but it could not be added to the ledger: ${
+            ledgerError instanceof Error ? ledgerError.message : "unknown error"
+          }`,
+        );
+      }
+    },
+    [],
+  );
 
-  const setThresholds = useCallback((next: AuditThresholds) => {
-    setThresholdsState(next);
-    try {
-      if (TEMPORARY_DEVICE_ONLY_TEST_MODE || !email) writeGuestThresholds(window.localStorage, next);
-    } catch {
-      setError("This browser could not save test thresholds on this device.");
-    }
-  }, [email]);
+  const setThresholds = useCallback(
+    (next: AuditThresholds) => {
+      setThresholdsState(next);
+      try {
+        if (TEMPORARY_DEVICE_ONLY_TEST_MODE || !email)
+          writeGuestThresholds(window.localStorage, next);
+      } catch {
+        setError("This browser could not save test thresholds on this device.");
+      }
+    },
+    [email],
+  );
 
   const importRun = useCallback(
     async (filename: string, log: Json, checks: ControlResult[], runName: string) => {
@@ -253,13 +266,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         setRuns((current) => [localRun, ...current.filter((run) => run.id !== localRun.id)]);
         return localRun;
       }
-      if (authError || !userData.user) throw new Error("Could not verify account status. Please try again.");
+      if (authError || !userData.user)
+        throw new Error("Could not verify account status. Please try again.");
       const storagePath = `${userData.user.id}/${crypto.randomUUID()}.json`;
-      const sourceFile = new File([JSON.stringify(log, null, 2)], filename, { type: "application/json" });
+      const sourceFile = new File([JSON.stringify(log, null, 2)], filename, {
+        type: "application/json",
+      });
       const { error: uploadError } = await supabase.storage
         .from("agentledger-run-logs")
         .upload(storagePath, sourceFile, { contentType: "application/json", upsert: false });
-      if (uploadError) throw new Error(`The private log could not be saved: ${uploadError.message}`);
+      if (uploadError)
+        throw new Error(`The private log could not be saved: ${uploadError.message}`);
 
       const { data, error: insertError } = await supabase
         .from("audit_runs")
@@ -288,8 +305,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [recordInLedger, thresholds],
   );
 
-  const removeRun = useCallback(async (run: AuditRun) => {
-    setError("");
+  const removeRun = useCallback(
+    async (run: AuditRun) => {
+      setError("");
       if (isGuestAuditRun(run)) {
         await deleteGuestAudit(run.id);
         await recordInLedger(run, "audit_deleted");
@@ -301,7 +319,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       await supabase.storage.from("agentledger-run-logs").remove([run.storage_path]);
       await recordInLedger(run, "audit_deleted");
       setRuns((current) => current.filter((item) => item.id !== run.id));
-  }, [recordInLedger]);
+    },
+    [recordInLedger],
+  );
 
   const signOut = useCallback(async () => {
     await queryClient.cancelQueries();
@@ -316,7 +336,20 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   return (
     <LedgerContext.Provider
-      value={{ email, runs, loadingRuns, thresholds, anthropicKey, setAnthropicKey, error, setThresholds, clearError: () => setError(""), importRun, removeRun, signOut }}
+      value={{
+        email,
+        runs,
+        loadingRuns,
+        thresholds,
+        anthropicKey,
+        setAnthropicKey,
+        error,
+        setThresholds,
+        clearError: () => setError(""),
+        importRun,
+        removeRun,
+        signOut,
+      }}
     >
       {children}
     </LedgerContext.Provider>

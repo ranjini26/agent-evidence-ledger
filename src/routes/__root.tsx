@@ -41,9 +41,10 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
-  const isModuleLoadFailure = /importing a module script failed|failed to fetch dynamically imported module|error loading dynamically imported module|unable to preload css/i.test(
-    error instanceof Error ? error.message : String(error),
-  );
+  const isModuleLoadFailure =
+    /importing a module script failed|failed to fetch dynamically imported module|error loading dynamically imported module|unable to preload css/i.test(
+      error instanceof Error ? error.message : String(error),
+    );
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
@@ -92,10 +93,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "AgentLedger — AI agent run audits" },
-      { name: "description", content: "Evidence-linked reviews of AI agent runs, with clear control checks and printable reports." },
+      {
+        name: "description",
+        content:
+          "Evidence-linked reviews of AI agent runs, with clear control checks and printable reports.",
+      },
       { name: "author", content: "Lovable" },
       { property: "og:title", content: "AgentLedger — AI agent run audits" },
-      { property: "og:description", content: "Evidence-linked reviews of AI agent runs, with clear control checks and printable reports." },
+      {
+        property: "og:description",
+        content:
+          "Evidence-linked reviews of AI agent runs, with clear control checks and printable reports.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
@@ -107,7 +116,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap",
+      },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),

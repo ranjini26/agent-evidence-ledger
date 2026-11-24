@@ -6,3 +6,9 @@ pnpm-lock.yaml
 package-lock.json
 bun.lock
 routeTree.gen.ts
+# Generated or managed by Lovable: never reformat by hand.
+src/integrations/
+.lovable/
+AGENTS.md
+drizzle/
+supabase/

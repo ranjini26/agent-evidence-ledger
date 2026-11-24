@@ -19,11 +19,7 @@
       "content": {
         "pipeline": "build-1187",
         "result": "failed",
-        "failed_tests": [
-          "test_login_timeout",
-          "test_export_csv",
-          "test_rate_limit"
-        ]
+        "failed_tests": ["test_login_timeout", "test_export_csv", "test_rate_limit"]
       }
     },
     {

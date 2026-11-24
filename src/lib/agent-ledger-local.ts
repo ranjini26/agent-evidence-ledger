@@ -134,8 +134,14 @@ function openGuestDatabase(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Could not open on-device audit storage."));
-    request.onblocked = () => reject(new Error("On-device audit storage is busy in another tab. Close duplicate tabs and try again."));
+    request.onerror = () =>
+      reject(request.error ?? new Error("Could not open on-device audit storage."));
+    request.onblocked = () =>
+      reject(
+        new Error(
+          "On-device audit storage is busy in another tab. Close duplicate tabs and try again.",
+        ),
+      );
   });
 }
 
@@ -145,9 +151,12 @@ export async function loadGuestAudits(): Promise<GuestAuditRun[]> {
     return await new Promise((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, "readonly");
       const request = transaction.objectStore(STORE_NAME).getAll() as IDBRequest<GuestAuditRun[]>;
-      request.onsuccess = () => resolve(request.result.sort((a, b) => b.created_at.localeCompare(a.created_at)));
-      request.onerror = () => reject(request.error ?? new Error("Could not read on-device audits."));
-      transaction.onabort = () => reject(transaction.error ?? new Error("Could not read on-device audits."));
+      request.onsuccess = () =>
+        resolve(request.result.sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      request.onerror = () =>
+        reject(request.error ?? new Error("Could not read on-device audits."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Could not read on-device audits."));
     });
   } finally {
     database.close();
@@ -161,8 +170,10 @@ export async function saveGuestAudit(run: GuestAuditRun): Promise<void> {
       const transaction = database.transaction(STORE_NAME, "readwrite");
       transaction.objectStore(STORE_NAME).put(run);
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the on-device audit."));
-      transaction.onabort = () => reject(transaction.error ?? new Error("Could not save the on-device audit."));
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("Could not save the on-device audit."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Could not save the on-device audit."));
     });
   } finally {
     database.close();
@@ -176,8 +187,10 @@ export async function deleteGuestAudit(id: string): Promise<void> {
       const transaction = database.transaction(STORE_NAME, "readwrite");
       transaction.objectStore(STORE_NAME).delete(id);
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error("Could not delete the on-device audit."));
-      transaction.onabort = () => reject(transaction.error ?? new Error("Could not delete the on-device audit."));
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("Could not delete the on-device audit."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Could not delete the on-device audit."));
     });
   } finally {
     database.close();
@@ -195,7 +208,11 @@ function readThreshold(value: unknown, fallback: number): number {
 
 function ledgerTransaction<T>(
   mode: IDBTransactionMode,
-  run: (store: IDBObjectStore, resolve: (value: T) => void, reject: (error: unknown) => void) => void,
+  run: (
+    store: IDBObjectStore,
+    resolve: (value: T) => void,
+    reject: (error: unknown) => void,
+  ) => void,
 ): Promise<T> {
   return openGuestDatabase().then(
     (database) =>
@@ -215,7 +232,8 @@ export const indexedDbLedgerStore: LedgerStore = {
   last: () =>
     ledgerTransaction<LedgerRecord | null>("readonly", (store, resolve, reject) => {
       const request = store.openCursor(null, "prev");
-      request.onsuccess = () => resolve((request.result?.value as LedgerRecord | undefined) ?? null);
+      request.onsuccess = () =>
+        resolve((request.result?.value as LedgerRecord | undefined) ?? null);
       request.onerror = () => reject(request.error);
     }),
   add: (record) =>
@@ -224,7 +242,9 @@ export const indexedDbLedgerStore: LedgerStore = {
       request.onsuccess = () => resolve();
       request.onerror = (event) => {
         event.preventDefault();
-        reject(request.error?.name === "ConstraintError" ? new LedgerConflictError() : request.error);
+        reject(
+          request.error?.name === "ConstraintError" ? new LedgerConflictError() : request.error,
+        );
       };
     }),
 };
@@ -239,7 +259,10 @@ export function loadLedgerRecords(): Promise<LedgerRecord[]> {
 }
 
 /** Append a record for a run that was saved ("audit_recorded") or deleted ("audit_deleted"). */
-export function recordRunInLedger(run: GuestAuditRun, kind: LedgerEntryKind): Promise<LedgerRecord> {
+export function recordRunInLedger(
+  run: GuestAuditRun,
+  kind: LedgerEntryKind,
+): Promise<LedgerRecord> {
   return appendToLedger(indexedDbLedgerStore, {
     kind,
     recordedAt: new Date().toISOString(),
