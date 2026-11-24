@@ -9,10 +9,18 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// Static build for GitHub Pages: `PAGES_BASE=/agent-evidence-ledger/ bun run build:pages`.
+// Unset (the default, and inside Lovable), the build is unchanged.
+const pagesBase = process.env["PAGES_BASE"];
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
+    ...(pagesBase
+      ? { spa: { enabled: true, prerender: { outputPath: "/index.html", crawlLinks: false } } }
+      : {}),
   },
+  ...(pagesBase ? { vite: { base: pagesBase }, nitro: false as const } : {}),
 });
