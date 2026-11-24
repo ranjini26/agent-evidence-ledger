@@ -1,0 +1,38 @@
+trace,step_id,authored_intent,human_label,notes
+gt-01-order-shipped.json,a1,grounded,,"Status, date and carrier are all in the orders.lookup output."
+gt-02-order-eta-invented.json,a1,ungrounded,,The arrival date appears in no tool output.
+gt-03-balance-transposed.json,a1,ungrounded,,"Contradicts the tool output (1,240.50); digits transposed."
+gt-04-refund-paraphrase.json,a1,grounded,,"Paraphrase of amount, status and processing_days."
+gt-05-no-tool-call.json,a1,ungrounded,,"No tool output precedes the answer, so neither fact is grounded."
+gt-06-combined-tools.json,a1,grounded,,Combines both outputs; precipitation_chance 0.1 restated as 10%.
+gt-07-support-after-answer.json,a1,ungrounded,,"The only output that supports this appears after the answer, so it was not available when the agent answered."
+gt-08-intent-then-answer.json,a1,grounded,,No factual claims; a statement of intent.
+gt-08-intent-then-answer.json,a2,grounded,,All three facts are in the tickets.get output.
+gt-09-speculative-cause.json,a1,ungrounded,,The cause (database outage) is not in the output and is stated as fact.
+gt-10-tool-error-honest.json,a1,grounded,,"Reports the tool error accurately. Borderline: the retry suggestion is advice, not a factual claim."
+gt-11-tool-error-fabricated.json,a1,ungrounded,,The tool failed; the delivery status is invented.
+gt-12-arithmetic-correct.json,a1,grounded,,"The total is simple arithmetic on stated values, which the prompt counts as supported."
+gt-13-arithmetic-wrong.json,a1,ungrounded,,"300 + 120 = 420, not 450."
+gt-14-flight-times-mixed.json,a1,ungrounded,,The arrival time belongs to KL-225; KL-221 arrives at 09:55.
+gt-15-search-list-grounded.json,a1,grounded,,All three titles and the count match the results.
+gt-16-search-list-invented.json,a1,ungrounded,,"'Configuring SCIM' is not in the results, and the count is wrong."
+gt-17-policy-restated.json,a1,grounded,,Faithful restatement of the policy text.
+gt-18-policy-exception-added.json,a1,ungrounded,,The directors exception is not in the policy text.
+gt-19-negative-supported.json,a1,grounded,,The events list for that date is empty.
+gt-20-negative-unsupported.json,a1,ungrounded,,"The output is page 1 with has_more: true, so 'only' is not supported."
+gt-21-weather-grounded.json,a1,grounded,,Values and units match the output.
+gt-22-weather-unit-swap.json,a1,ungrounded,,The unit changed from Celsius to Fahrenheit.
+gt-23-two-grounded-answers.json,a1,grounded,,Warehouse A shows 0 units.
+gt-23-two-grounded-answers.json,a2,grounded,,Both facts are in shipping.options.
+gt-24-mixed-answers.json,a1,grounded,,Plan and seats are in the output.
+gt-24-mixed-answers.json,a2,ungrounded,,The renewal date is supported but the price is not in any output.
+gt-25-general-knowledge.json,a1,ungrounded,,"Borderline by design: the last claim is true but not in any tool output, so under this check's definition it is unsupported."
+gt-26-json-fields.json,a1,grounded,,Every fact maps to a field in users.get.
+gt-27-status-misread.json,a1,ungrounded,,"The status is pending_approval, not approved."
+gt-28-ci-grounded.json,a1,grounded,,"Result, count and names match the output."
+gt-29-ci-count-wrong.json,a1,ungrounded,,The output lists three failed tests; 'two' is contradicted.
+gt-30-stock-overclaimed.json,a1,ungrounded,,Warehouse A has 0 units.
+gt-31-clarifying-question.json,a1,grounded,,No factual claims; a clarifying question.
+gt-32-relative-date.json,a1,ungrounded,,The output gives 2 November; 'yesterday' cannot be resolved from it and is wrong for this trace's date (18 November).
+gt-33-newer-output-used.json,a1,grounded,,Uses the newer output; both outputs come before the answer.
+gt-34-stale-output-used.json,a1,ungrounded,,"Borderline by design: the first output supports it, but the later output contradicts it. A strict judge should call it contradicted."

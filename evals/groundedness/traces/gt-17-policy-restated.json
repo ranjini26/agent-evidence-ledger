@@ -1,0 +1,32 @@
+{
+  "schema": "agentledger.trace.v1",
+  "run_id": "gt-17-policy-restated",
+  "label": "SAMPLE · Policy restated accurately",
+  "sample": true,
+  "description": "Synthetic trace written for the groundedness eval. Not data from any real agent, customer or system.",
+  "steps": [
+    {
+      "step_id": "u1",
+      "type": "user_message",
+      "timestamp": "2026-11-18T09:01:00Z",
+      "content": "Can I fly business class?"
+    },
+    {
+      "step_id": "t1",
+      "type": "tool_output",
+      "timestamp": "2026-11-18T09:02:00Z",
+      "tool_name": "policies.get",
+      "content": {
+        "doc": "Travel policy v4",
+        "text": "Economy class is required for flights under 6 hours. Business class may be booked for flights of 6 hours or more with manager approval."
+      }
+    },
+    {
+      "step_id": "a1",
+      "type": "model_answer",
+      "timestamp": "2026-11-18T09:03:00Z",
+      "model_version": "agent-v3.2",
+      "content": "Under Travel policy v4, flights of 6 hours or more can be booked in business class if your manager approves."
+    }
+  ]
+}

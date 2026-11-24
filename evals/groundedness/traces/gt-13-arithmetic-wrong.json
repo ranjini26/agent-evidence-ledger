@@ -1,0 +1,42 @@
+{
+  "schema": "agentledger.trace.v1",
+  "run_id": "gt-13-arithmetic-wrong",
+  "label": "SAMPLE · Total computed wrongly",
+  "sample": true,
+  "description": "Synthetic trace written for the groundedness eval. Not data from any real agent, customer or system.",
+  "steps": [
+    {
+      "step_id": "u1",
+      "type": "user_message",
+      "timestamp": "2026-11-18T09:01:00Z",
+      "content": "What's the total on invoice INV-3002?"
+    },
+    {
+      "step_id": "t1",
+      "type": "tool_output",
+      "timestamp": "2026-11-18T09:02:00Z",
+      "tool_name": "billing.invoice",
+      "content": {
+        "invoice": "INV-3002",
+        "currency": "USD",
+        "line_items": [
+          {
+            "desc": "Seats",
+            "amount": 300
+          },
+          {
+            "desc": "Support",
+            "amount": 120
+          }
+        ]
+      }
+    },
+    {
+      "step_id": "a1",
+      "type": "model_answer",
+      "timestamp": "2026-11-18T09:03:00Z",
+      "model_version": "agent-v3.2",
+      "content": "Invoice INV-3002 totals $450: $300 for seats and $120 for support."
+    }
+  ]
+}

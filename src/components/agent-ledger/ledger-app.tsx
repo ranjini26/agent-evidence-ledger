@@ -1,20 +1,26 @@
 import { useCallback, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, BookCheck, Check, ChevronDown,
   CircleDot, ClipboardCheck, FileCheck2, FileDown, FileJson2, Fingerprint,
-  Gauge, HardDrive, LockKeyhole, LogOut, Printer, ShieldAlert, ShieldCheck,
+  FileText, Gauge, HardDrive, KeyRound, Link2, LockKeyhole, LogOut, Printer, ShieldAlert, ShieldCheck,
   ShieldQuestion, SlidersHorizontal, Sparkles, UploadCloud, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAgentLedger, type AuditRun } from "@/lib/agent-ledger-context";
-import { isGuestAuditRun, isGuestDemoAuditRun } from "@/lib/agent-ledger-local";
+import { isGuestAuditRun, isGuestDemoAuditRun, loadLedgerRecords } from "@/lib/agent-ledger-local";
 import {
-  DEFAULT_THRESHOLDS, auditOpinion, extractAuditEvents, formatEvidencePath,
-  scoreAudit, type AuditCheck, type AuditThresholds, type AuditStatus,
-} from "@/lib/agent-ledger";
+  DEFAULT_THRESHOLDS, auditOpinion, evaluateRun, formatTracePath, measuredPaths,
+  parseTrace, readStoredResults, type AuditThresholds, type ControlResult,
+  type ControlStatus, type TraceStep, verifyLedger, crossCheckRuns,
+  type LedgerVerification, type RunLedgerCheck,
+} from "@/lib/audit";
+import { buildAuditReport } from "@/lib/report/audit-report";
+import { renderMarkdown } from "@/lib/report/markdown";
+import { renderPdf } from "@/lib/report/pdf";
+import { createClaudeGroundednessJudge } from "@/lib/judge/claude-groundedness-judge";
 import type { Json } from "@/integrations/supabase/types";
 
 const controls = [
@@ -22,6 +28,7 @@ const controls = [
   { key: "versioningMin", label: "Versioning", note: "Entries with a model or agent version", unit: "%", icon: FileCheck2 },
   { key: "hallucinationMax", label: "Hallucination rate", note: "Maximum explicitly measured rate", unit: "%", icon: Sparkles },
   { key: "oversightMin", label: "Human oversight", note: "Entries recording review or approval", unit: "%", icon: ClipboardCheck },
+  { key: "groundednessMin", label: "Groundedness", note: "Answer claims supported by earlier tool outputs", unit: "%", icon: BookCheck },
 ] as const;
 
 const iconsByControl = {
@@ -29,6 +36,7 @@ const iconsByControl = {
   versioning: FileCheck2,
   hallucinations: Sparkles,
   oversight: ClipboardCheck,
+  groundedness: BookCheck,
 } as const;
 
 function formatPercent(value: number | null): string {
@@ -44,9 +52,8 @@ function formattedDate(value: string, compact = false): string {
   ).format(date);
 }
 
-function runChecks(run: AuditRun): AuditCheck[] {
-  if (!Array.isArray(run.checks)) return [];
-  return run.checks as unknown as AuditCheck[];
+function runChecks(run: AuditRun): ControlResult[] {
+  return readStoredResults(run.checks);
 }
 
 function runSource(run: AuditRun): unknown {
@@ -62,10 +69,11 @@ function runThresholds(run: AuditRun): AuditThresholds {
     versioningMin: Number(partial.versioningMin ?? DEFAULT_THRESHOLDS.versioningMin),
     hallucinationMax: Number(partial.hallucinationMax ?? DEFAULT_THRESHOLDS.hallucinationMax),
     oversightMin: Number(partial.oversightMin ?? DEFAULT_THRESHOLDS.oversightMin),
+    groundednessMin: Number(partial.groundednessMin ?? DEFAULT_THRESHOLDS.groundednessMin),
   };
 }
 
-function StatusPill({ status }: { status: AuditStatus }) {
+function StatusPill({ status }: { status: ControlStatus }) {
   const label = status === "pass" ? "Pass" : status === "fail" ? "Fail" : "Not evidenced";
   const Icon = status === "pass" ? Check : status === "fail" ? X : ShieldQuestion;
   return (
@@ -244,8 +252,139 @@ function LatestCheckList({ run }: { run: AuditRun }) {
   );
 }
 
+function GroundednessKeyField({ disabled }: { disabled: boolean }) {
+  const { anthropicKey, setAnthropicKey } = useAgentLedger();
+  return (
+    <div className="mt-4 border border-border/60 bg-card/25 px-4 py-3">
+      <label htmlFor="anthropic-key" className="flex items-center gap-2 text-[11px] font-semibold"><KeyRound size={13} className="text-primary" aria-hidden="true"/> Anthropic API key <span className="font-normal text-muted-foreground">(optional, for the groundedness check)</span></label>
+      <div className="mt-2 flex gap-2">
+        <Input id="anthropic-key" type="password" autoComplete="off" spellCheck={false} disabled={disabled} value={anthropicKey} onChange={(event) => setAnthropicKey(event.target.value.trim())} placeholder="sk-ant-…" className="h-8 rounded-none text-xs"/>
+        {anthropicKey && <Button type="button" variant="outline" className="h-8 rounded-none text-[10px]" disabled={disabled} onClick={() => setAnthropicKey("")}>Forget key</Button>}
+      </div>
+      <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">Kept in this tab's memory only. It is never saved, logged or sent to AgentLedger; it is forgotten when you reload. With a key, each model answer and the tool outputs before it are sent from your browser to Anthropic's API and billed to your key. Without a key, groundedness is reported as not evidenced.</p>
+    </div>
+  );
+}
+
+function MethodLine({ method }: { method: NonNullable<ControlResult["method"]> }) {
+  return <span className="ledger-mono">Method: {method.name} · Model: {method.model ?? "not run (no API key)"} · Prompt: {method.promptVersion}</span>;
+}
+
+function JudgedDetails({ check }: { check: ControlResult }) {
+  if (!check.method) return null;
+  const flagged = (check.answers ?? []).flatMap((answer) => answer.claims.filter((claim) => claim.verdict !== "supported").map((claim) => ({ answer, claim })));
+  const failed = (check.answers ?? []).filter((answer) => answer.error);
+  return (
+    <div className="border-t border-border/70 px-3 py-3 text-[9px] leading-relaxed text-muted-foreground sm:px-4">
+      <p><MethodLine method={check.method}/></p>
+      {flagged.length > 0 && <ul className="mt-2 grid gap-1.5">{flagged.map(({ answer, claim }, index) => <li key={index} className="flex flex-wrap gap-x-2"><a href={`#source-entry-${answer.step}`} className="font-semibold text-primary">Step {answer.step + 1}</a><span className="text-coral">{claim.verdict}</span><span className="text-foreground">“{claim.claim}”</span><span>{claim.explanation}</span></li>)}</ul>}
+      {failed.length > 0 && <p className="mt-2 text-review">Not judged: {failed.map((answer) => `step ${answer.step + 1} (${answer.error})`).join("; ")}</p>}
+    </div>
+  );
+}
+
+function LedgerVerifier() {
+  const { runs } = useAgentLedger();
+  const [state, setState] = useState<{ verification: LedgerVerification; runChecks: RunLedgerCheck[] } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [failure, setFailure] = useState("");
+  const verify = async () => {
+    setChecking(true);
+    setFailure("");
+    try {
+      const records = await loadLedgerRecords();
+      const verification = await verifyLedger(records);
+      const runChecks = await crossCheckRuns(records, runs);
+      setState({ verification, runChecks });
+    } catch (error) {
+      setState(null);
+      setFailure(error instanceof Error ? error.message : "The ledger could not be read.");
+    } finally {
+      setChecking(false);
+    }
+  };
+  const modified = state?.runChecks.filter((check) => check.status === "modified_since_recorded") ?? [];
+  const unrecorded = state?.runChecks.filter((check) => check.status === "not_recorded") ?? [];
+  const v = state?.verification;
+  return (
+    <section className="mt-6 border border-border bg-card/40 px-4 py-4" aria-labelledby="ledger-heading">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 id="ledger-heading" className="flex items-center gap-2 text-sm font-bold"><Link2 size={14} className="text-primary" aria-hidden="true"/> Audit ledger</h2><p className="mt-1 text-[10px] text-muted-foreground">Each audit is recorded on this device with the SHA-256 hash of the record before it.</p></div>
+        <Button type="button" variant="outline" className="h-8 rounded-none text-[10px] font-bold" disabled={checking} onClick={() => void verify()}>{checking ? "Verifying…" : "Verify ledger"}</Button>
+      </div>
+      {failure && <p role="alert" className="mt-3 text-[10px] text-coral">{failure}</p>}
+      {v && (
+        <div role="status" className="mt-3 grid gap-2 text-[10px] leading-relaxed">
+          {v.ok ? (
+            <p className="flex flex-wrap items-center gap-x-2 text-primary"><ShieldCheck size={13}/> <strong>Ledger intact.</strong> <span className="text-muted-foreground">{v.records} record{v.records === 1 ? "" : "s"} recomputed{v.headHash ? <>; head hash <code className="ledger-mono break-all text-foreground">{v.headHash}</code></> : ""}.</span></p>
+          ) : (
+            <div className="border border-coral/40 bg-coral/5 p-3 text-coral">
+              <p className="flex items-center gap-2 font-bold"><ShieldAlert size={13}/> Ledger broken at record #{v.firstBreak?.index}{v.firstBreak?.runName ? ` (${v.firstBreak.runName})` : ""}.</p>
+              <p className="mt-1">{v.firstBreak?.explanation}</p>
+              {v.breaks.length > 1 && <ul className="mt-2 list-disc pl-4">{v.breaks.slice(1).map((item, index) => <li key={index}>Record #{item.index}: {item.explanation}</li>)}</ul>}
+            </div>
+          )}
+          {modified.length > 0 && <p className="text-coral"><strong>Differs from its ledger record:</strong> {modified.map((check) => `${check.runName} (record #${check.recordIndex}${v.breaks.some((item) => item.index === check.recordIndex) ? ", which itself fails verification, so neither copy can be trusted" : ", which verifies, so the ledger record is the original"})`).join("; ")}.</p>}
+          {unrecorded.length > 0 && <p className="text-review"><strong>Not in the ledger:</strong> {unrecorded.map((check) => check.runName).join(", ")}. Saved before the ledger existed, or recording failed.</p>}
+          <p className="text-muted-foreground">The chain detects edits, insertions, removals and reordering of earlier records. On its own it cannot detect removal of the newest records; keep the head hash to compare later.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function downloadFile(content: BlobPart, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function ReportExportButtons({ run }: { run: AuditRun }) {
+  const [busy, setBusy] = useState<"md" | "pdf" | null>(null);
+  const exportReport = async (format: "md" | "pdf") => {
+    setBusy(format);
+    try {
+      const records = await loadLedgerRecords();
+      const verification = await verifyLedger(records);
+      const record = [...records].reverse().find((item) => item.kind === "audit_recorded" && item.run.id === run.id) ?? null;
+      const [runCheck] = await crossCheckRuns(records, [run]);
+      const results = runChecks(run);
+      let steps: { index: number; label: string; stepId: string | null }[] = [];
+      try { steps = parseTrace(runSource(run)).steps.map((step) => ({ index: step.index, label: step.label, stepId: step.stepId })); } catch { steps = []; }
+      const report = buildAuditReport({
+        run: { id: run.id, name: run.run_name, sourceFilename: run.source_filename, createdAt: run.created_at, eventCount: run.event_count },
+        results,
+        thresholds: runThresholds(run),
+        opinion: auditOpinion(results),
+        steps,
+        ledger: { record, verification, ...(runCheck ? { runCheck: runCheck.status } : {}) },
+        generatedAt: new Date().toISOString(),
+      });
+      const stem = run.run_name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "audit-report";
+      if (format === "md") downloadFile(renderMarkdown(report), "text/markdown;charset=utf-8", `${stem}.md`);
+      else downloadFile(renderPdf(report) as BlobPart, "application/pdf", `${stem}.pdf`);
+      toast.success(`Report exported as ${format === "md" ? "Markdown" : "PDF"}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The report could not be exported.");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <>
+      <Button variant="outline" className="min-h-10 rounded-none px-4 text-xs font-bold" disabled={busy !== null} onClick={() => void exportReport("md")}><FileText size={15}/> {busy === "md" ? "Exporting…" : "Export Markdown"}</Button>
+      <Button variant="outline" className="min-h-10 rounded-none px-4 text-xs font-bold" disabled={busy !== null} onClick={() => void exportReport("pdf")}><FileDown size={15}/> {busy === "pdf" ? "Exporting…" : "Export PDF"}</Button>
+    </>
+  );
+}
+
 export function DashboardPage() {
-  const { email, runs, loadingRuns, thresholds, setThresholds, importRun, removeRun } = useAgentLedger();
+  const { email, runs, loadingRuns, thresholds, setThresholds, importRun, removeRun, anthropicKey } = useAgentLedger();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -267,7 +406,7 @@ export function DashboardPage() {
     const checks = runChecks(run);
     value.pass += checks.filter((check) => check.status === "pass").length;
     value.fail += checks.filter((check) => check.status === "fail").length;
-    value.unknown += checks.filter((check) => check.status === "not-evidenced").length;
+    value.unknown += checks.filter((check) => check.status === "not_evidenced").length;
     return value;
   }, { pass: 0, fail: 0, unknown: 0 }), [runs]);
 
@@ -283,9 +422,10 @@ export function DashboardPage() {
       const text = await file.text();
       let source: unknown;
       try { source = JSON.parse(text); } catch { throw new Error("This file is not valid JSON. Correct the file and try again."); }
-      const events = extractAuditEvents(source);
-      if (events.length === 0) throw new Error("This JSON has no run entries to review. Upload an entry or an empty event list with run metadata.");
-      const checks = scoreAudit(events, thresholds, source);
+      const trace = parseTrace(source);
+      if (trace.steps.length === 0) throw new Error("This JSON has no run entries to review. Upload an entry or an empty event list with run metadata.");
+      const judge = anthropicKey ? createClaudeGroundednessJudge({ apiKey: anthropicKey, browser: true }) : null;
+      const checks = await evaluateRun(trace, thresholds, judge);
       const stem = file.name.replace(/\.json$/i, "").replace(/[_-]+/g, " ").trim() || "Agent run";
       const run = await importRun(file.name, source as Json, checks, stem);
       toast.success("Run uploaded. Your linked audit is ready.");
@@ -296,7 +436,7 @@ export function DashboardPage() {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
     }
-  }, [importRun, navigate, thresholds]);
+  }, [anthropicKey, importRun, navigate, thresholds]);
 
   const dragEnter = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setDragging(true); };
   const drop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setDragging(false); void readFile(event.dataTransfer.files[0]); };
@@ -338,12 +478,14 @@ export function DashboardPage() {
                   {busy && <span className="ledger-grain pointer-events-none absolute inset-x-0 bottom-0 h-1 animate-pulse bg-primary/30"/>}
                 </div>
                 {fileError && <div role="alert" className="mt-3 flex items-start gap-2 border border-coral/30 bg-coral/5 p-3 text-[11px] leading-relaxed text-coral"><ShieldAlert size={14} className="mt-0.5 shrink-0"/>{fileError}</div>}
+                <GroundednessKeyField disabled={busy}/>
                 <div className="mt-4 flex gap-3 border border-border/60 bg-card/25 px-4 py-3"><span className="ledger-mono pt-0.5 text-[9px] text-primary">↳</span><p className="text-[10px] leading-relaxed text-muted-foreground">{email ? "Each check is tied to fields found in your log. A hallucination rate is reported only when the file includes an explicit rate or complete per-entry labels." : "Each check is tied to fields found in your log. Test uploads are stored only in this browser and are not sent to cloud storage."}</p></div>
                 {latestRun && <div className="mt-6 overflow-hidden border border-border bg-card/50"><div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Most recent audit</span><h3 className="mt-1 truncate text-sm font-bold">{latestRun.run_name}</h3></div><Link to="/report/$auditId" params={{auditId:latestRun.id}} className="inline-flex min-h-9 shrink-0 items-center gap-2 border border-border px-3 text-[10px] font-bold hover:border-primary/50 hover:text-primary">View report <ArrowUpRight size={13}/></Link></div><LatestCheckList run={latestRun}/></div>}
+                <LedgerVerifier/>
                 <div className="mt-8 border-t border-border/80 pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-bold">Audit history</h2><p className="mt-1 text-[10px] text-muted-foreground">Your saved runs, newest first.</p></div><div className="flex items-center gap-2"><Button variant={filter==="all"?"secondary":"ghost"} size="sm" className="h-8 text-[10px]" onClick={()=>setFilter("all")}>All runs</Button><Button variant={filter==="needs-review"?"secondary":"ghost"} size="sm" className="h-8 text-[10px]" onClick={()=>setFilter("needs-review")}>Needs review</Button></div></div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_190px]"><label className="relative block"><span className="sr-only">Search audit history</span><Input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search runs…" className="h-9 rounded-none border-border/80 bg-background/50 text-[11px]" aria-label="Search audit history"/></label><label className="flex items-center gap-2 text-[9px] text-muted-foreground">Sort: <select aria-label="Sort audit history" value={historySort} onChange={(event)=>setHistorySort(event.target.value as "newest"|"oldest")} className="min-h-9 min-w-0 flex-1 border border-input bg-background px-2 text-[10px] text-foreground"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select><ChevronDown size={12}/></label></div>
                   <div className="mt-3">
-                    {loadingRuns ? <p className="ledger-mono border-y border-border/80 py-6 text-center text-[10px] text-muted-foreground">Loading {email ? "your saved audits" : "device test audits"}…</p> : filteredRuns.length===0 ? <div className="border-y border-border/80 py-6 text-center"><p className="text-[11px] text-muted-foreground">{runs.length===0?"No audit runs yet. Upload a JSON log to get started.":"No runs match these filters."}</p></div> : <div className="ledger-grid-lines grid">{filteredRuns.map((run)=>{const checks=runChecks(run);const fail=checks.filter((check)=>check.status==="fail").length;const unknown=checks.filter((check)=>check.status==="not-evidenced").length;return <div key={run.id} className="flex flex-wrap items-center gap-3 py-3"><div className="flex min-w-0 flex-1 items-center gap-3"><span className={`flex size-8 shrink-0 items-center justify-center border ${fail?"ledger-status-fail":unknown?"ledger-status-unknown":"ledger-status-pass"}`}>{fail?<ShieldAlert size={14}/>:unknown?<ShieldQuestion size={14}/>:<Check size={14}/>}</span><div className="min-w-0"><Link to="/findings/$auditId" params={{auditId:run.id}} className="block truncate text-[11px] font-semibold hover:text-primary">{run.run_name}</Link><span className="ledger-mono mt-1 block truncate text-[9px] text-muted-foreground">{formattedDate(run.created_at,true)} · {run.event_count} {run.event_count===1?"entry":"entries"}</span></div></div><div className="flex items-center gap-2"><span className="ledger-mono text-[9px] text-muted-foreground">{fail?`${fail} fail`:unknown?`${unknown} unevidenced`:"4 pass"}</span><Link aria-label={`Open ${run.run_name} findings`} to="/findings/$auditId" params={{auditId:run.id}} className="flex size-8 items-center justify-center border border-border/70 text-muted-foreground hover:border-primary/70 hover:text-primary"><ArrowUpRight size={14}/></Link><Button aria-label={`Delete this ${email ? "account" : "device"} audit and its original log`} title={email ? "Delete this audit and its original log" : "Delete this device-only test audit"} size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-coral" onClick={()=>void clearHistory(run)}><X size={14}/></Button></div></div>;})}</div>}
+                    {loadingRuns ? <p className="ledger-mono border-y border-border/80 py-6 text-center text-[10px] text-muted-foreground">Loading {email ? "your saved audits" : "device test audits"}…</p> : filteredRuns.length===0 ? <div className="border-y border-border/80 py-6 text-center"><p className="text-[11px] text-muted-foreground">{runs.length===0?"No audit runs yet. Upload a JSON log to get started.":"No runs match these filters."}</p></div> : <div className="ledger-grid-lines grid">{filteredRuns.map((run)=>{const checks=runChecks(run);const fail=checks.filter((check)=>check.status==="fail").length;const unknown=checks.filter((check)=>check.status==="not_evidenced").length;return <div key={run.id} className="flex flex-wrap items-center gap-3 py-3"><div className="flex min-w-0 flex-1 items-center gap-3"><span className={`flex size-8 shrink-0 items-center justify-center border ${fail?"ledger-status-fail":unknown?"ledger-status-unknown":"ledger-status-pass"}`}>{fail?<ShieldAlert size={14}/>:unknown?<ShieldQuestion size={14}/>:<Check size={14}/>}</span><div className="min-w-0"><Link to="/findings/$auditId" params={{auditId:run.id}} className="block truncate text-[11px] font-semibold hover:text-primary">{run.run_name}</Link><span className="ledger-mono mt-1 block truncate text-[9px] text-muted-foreground">{formattedDate(run.created_at,true)} · {run.event_count} {run.event_count===1?"entry":"entries"}</span></div></div><div className="flex items-center gap-2"><span className="ledger-mono text-[9px] text-muted-foreground">{fail?`${fail} fail`:unknown?`${unknown} unevidenced`:`${checks.length} pass`}</span><Link aria-label={`Open ${run.run_name} findings`} to="/findings/$auditId" params={{auditId:run.id}} className="flex size-8 items-center justify-center border border-border/70 text-muted-foreground hover:border-primary/70 hover:text-primary"><ArrowUpRight size={14}/></Link><Button aria-label={`Delete this ${email ? "account" : "device"} audit and its original log`} title={email ? "Delete this audit and its original log" : "Delete this device-only test audit"} size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-coral" onClick={()=>void clearHistory(run)}><X size={14}/></Button></div></div>;})}</div>}
                   </div>
                 </div>
               </section>
@@ -352,7 +494,7 @@ export function DashboardPage() {
                 <div className="flex items-center justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">01 <span className="text-border">/</span> Thresholds</span><h2 className="mt-2 text-sm font-bold">Control standards</h2></div><span className="flex size-8 items-center justify-center border border-border bg-secondary/40 text-muted-foreground"><SlidersHorizontal size={14}/></span></div>
                 <div className="mt-4 border-y border-border/70 py-2"><ThresholdEditor thresholds={thresholds} onChange={setThresholds}/></div>
                 {!email && <p className="mt-3 flex items-start gap-2 text-[10px] leading-relaxed text-review"><HardDrive size={12} className="mt-0.5 shrink-0"/> Testing without sign-in. Audits stay in this browser and are not uploaded to account storage.</p>}
-                <div className="mt-5 border-t border-border/70 pt-4"><h3 className="flex items-center gap-2 text-[11px] font-semibold"><ShieldCheck size={14} className="text-primary"/> How evidence is checked</h3><div className="mt-3 grid gap-3 text-[10px] leading-relaxed text-muted-foreground"><p><span className="font-semibold text-foreground/80">Traceability</span> — a stable ID or timestamp identifies the entry.</p><p><span className="font-semibold text-foreground/80">Versioning</span> — model or agent version is recorded in the entry.</p><p><span className="font-semibold text-foreground/80">Hallucinations</span> — an explicit rate or complete set of entry-level labels is present.</p><p><span className="font-semibold text-foreground/80">Oversight</span> — review, reviewer, or approval fields are recorded.</p></div><div className="mt-4 border-l-2 border-review/50 bg-review/5 py-2 pl-3 pr-2"><p className="flex items-center gap-1.5 text-[9px] font-semibold text-review"><ShieldQuestion size={11}/> Missing evidence is never a pass.</p><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">These checks support internal review; they are not independent verification or a compliance certification.</p></div></div>
+                <div className="mt-5 border-t border-border/70 pt-4"><h3 className="flex items-center gap-2 text-[11px] font-semibold"><ShieldCheck size={14} className="text-primary"/> How evidence is checked</h3><div className="mt-3 grid gap-3 text-[10px] leading-relaxed text-muted-foreground"><p><span className="font-semibold text-foreground/80">Traceability</span> — a stable ID or timestamp identifies the entry.</p><p><span className="font-semibold text-foreground/80">Versioning</span> — model or agent version is recorded in the entry.</p><p><span className="font-semibold text-foreground/80">Hallucinations</span> — an explicit rate or complete set of entry-level labels is present.</p><p><span className="font-semibold text-foreground/80">Oversight</span> — review, reviewer, or approval fields are recorded.</p><p><span className="font-semibold text-foreground/80">Groundedness</span> — with your API key, Claude extracts each answer's factual claims and checks them against tool outputs earlier in the trace.</p></div><div className="mt-4 border-l-2 border-review/50 bg-review/5 py-2 pl-3 pr-2"><p className="flex items-center gap-1.5 text-[9px] font-semibold text-review"><ShieldQuestion size={11}/> Missing evidence is never a pass.</p><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">These checks support internal review; they are not independent verification or a compliance certification.</p></div></div>
               </aside>
             </div>
             {latestRun && <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4 text-[9px] text-muted-foreground"><span className="ledger-mono uppercase tracking-[0.07em]">Latest source <span className="text-border">/</span> {latestRun.source_filename}</span><Link to="/findings/$auditId" params={{auditId:latestRun.id}} className="inline-flex items-center gap-1.5 hover:text-primary">Review the entry index <ArrowRight size={12}/></Link></div>}
@@ -363,7 +505,7 @@ export function DashboardPage() {
   );
 }
 
-function exactEntryIndex(eventPath: string, events: ReturnType<typeof extractAuditEvents>): number | null {
+function exactEntryIndex(eventPath: string, events: TraceStep[]): number | null {
   let longest = -1;
   let match: number | null = null;
   events.forEach((event, index) => {
@@ -378,7 +520,7 @@ function exactEntryIndex(eventPath: string, events: ReturnType<typeof extractAud
 export function FindingsPage({ auditId }: { auditId: string }) {
   const { runs, loadingRuns, email } = useAgentLedger();
   const run = runs.find((item) => item.id === auditId);
-  const events = useMemo(() => run ? extractAuditEvents(runSource(run)) : [], [run]);
+  const events = useMemo(() => run ? parseTrace(runSource(run)).steps : [], [run]);
   const checks = run ? runChecks(run) : [];
 
   if (!run && loadingRuns) return <AppFrame active="findings"><div className="ledger-mono py-14 text-center text-xs text-muted-foreground">Loading {email ? "your private audit" : "device test audit"}…</div></AppFrame>;
@@ -393,7 +535,7 @@ export function FindingsPage({ auditId }: { auditId: string }) {
           <Link to="/report/$auditId" params={{auditId:run.id}} className="flex min-h-9 items-center gap-2 border border-border px-3 text-[10px] font-bold hover:border-primary/70 hover:text-primary"><FileDown size={14}/> Printable report <ArrowUpRight size={12}/></Link>
         </div>
         <div className="mt-5 border border-border bg-card/45 px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-3"><span className={`flex size-9 items-center justify-center border ${checks.some((check)=>check.status==="fail")?"ledger-status-fail":checks.some((check)=>check.status==="not-evidenced")?"ledger-status-unknown":"ledger-status-pass"}`}>{checks.some((check)=>check.status==="fail")?<ShieldAlert size={16}/>:checks.some((check)=>check.status==="not-evidenced")?<ShieldQuestion size={16}/>:<ShieldCheck size={16}/>}</span><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Overall opinion</span><h2 className="mt-1 text-sm font-bold leading-snug">{auditOpinion(checks).title}</h2></div></div><span className="ledger-mono text-[9px] text-muted-foreground">{checks.filter((check)=>check.status==="pass").length}/4 PASS</span></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-3"><span className={`flex size-9 items-center justify-center border ${checks.some((check)=>check.status==="fail")?"ledger-status-fail":checks.some((check)=>check.status==="not_evidenced")?"ledger-status-unknown":"ledger-status-pass"}`}>{checks.some((check)=>check.status==="fail")?<ShieldAlert size={16}/>:checks.some((check)=>check.status==="not_evidenced")?<ShieldQuestion size={16}/>:<ShieldCheck size={16}/>}</span><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Overall opinion</span><h2 className="mt-1 text-sm font-bold leading-snug">{auditOpinion(checks).title}</h2></div></div><span className="ledger-mono text-[9px] text-muted-foreground">{checks.filter((check)=>check.status==="pass").length}/{checks.length} PASS</span></div>
           <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{auditOpinion(checks).explanation}</p>
         </div>
         <div className="mt-8 flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">01 <span className="text-border">/</span> Results</span><h2 className="mt-2 text-sm font-bold">Control checklist</h2></div><p className="text-right text-[9px] leading-relaxed text-muted-foreground">Original thresholds are preserved<br/>with this audit.</p></div>
@@ -407,14 +549,14 @@ export function FindingsPage({ auditId }: { auditId: string }) {
         }}>
           {checks.map((check,index)=>{
             const Icon=iconsByControl[check.id];
-            const uniquePaths=[...new Set(check.evidencePaths)];
+            const uniquePaths=[...new Set(measuredPaths(check))];
             const anchors=[...new Set(uniquePaths.map((path)=>exactEntryIndex(path,events)).filter((index):index is number=>index!==null))];
-            const isUnknown = check.status==="not-evidenced";
-            return <section key={check.id} className="border border-border/80 bg-card/40"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-3 py-3 sm:px-4"><div className="flex min-w-0 items-center gap-3"><span className="ledger-mono text-[9px] text-muted-foreground">0{index+1}</span><span className="flex size-8 shrink-0 items-center justify-center border border-border bg-secondary/40 text-muted-foreground"><Icon size={15}/></span><div className="min-w-0"><h3 className="truncate text-[11px] font-bold">{check.name}</h3><p className="mt-0.5 truncate text-[9px] text-muted-foreground">{check.summary}</p></div></div><StatusPill status={check.status}/></div><div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4"><div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5"><span className="ledger-mono text-[9px] text-muted-foreground">Observed <strong className="ml-1 font-semibold text-foreground">{formatPercent(check.measured)}</strong></span><span className="ledger-mono text-[9px] text-muted-foreground">Threshold <strong className="ml-1 font-semibold text-foreground">{check.direction==="minimum"?"≥":"≤"} {check.threshold}%</strong></span><span className="text-[9px] text-muted-foreground">{check.message}</span></div><div className="flex shrink-0 flex-wrap gap-2">{anchors.length>0?anchors.slice(0,2).map((entryIndex)=> <a key={entryIndex} href={`#source-entry-${entryIndex}`} className="inline-flex min-h-7 items-center gap-1.5 border border-primary/25 bg-accent/40 px-2 text-[9px] font-semibold text-primary hover:bg-accent">{events[entryIndex]?.label??`Entry ${entryIndex+1}`} <ArrowDown size={10}/></a>):isUnknown?<span className="flex min-h-7 items-center gap-1.5 border border-review/25 px-2 text-[9px] text-review"><ShieldQuestion size={10}/> No supporting entry</span>:<span className="flex min-h-7 items-center gap-1.5 border border-border px-2 text-[9px] text-muted-foreground">No matching fields</span>}{anchors.length>2&&<span className="self-center text-[9px] text-muted-foreground">+{anchors.length-2} more</span>}</div></div></section>;
+            const isUnknown = check.status==="not_evidenced";
+            return <section key={check.id} className="border border-border/80 bg-card/40"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-3 py-3 sm:px-4"><div className="flex min-w-0 items-center gap-3"><span className="ledger-mono text-[9px] text-muted-foreground">0{index+1}</span><span className="flex size-8 shrink-0 items-center justify-center border border-border bg-secondary/40 text-muted-foreground"><Icon size={15}/></span><div className="min-w-0"><h3 className="truncate text-[11px] font-bold">{check.name}</h3><p className="mt-0.5 truncate text-[9px] text-muted-foreground">{check.summary}</p></div></div><StatusPill status={check.status}/></div><div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4"><div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5"><span className="ledger-mono text-[9px] text-muted-foreground">Observed <strong className="ml-1 font-semibold text-foreground">{formatPercent(check.measured)}</strong></span><span className="ledger-mono text-[9px] text-muted-foreground">Threshold <strong className="ml-1 font-semibold text-foreground">{check.direction==="minimum"?"≥":"≤"} {check.threshold}%</strong></span><span className="text-[9px] text-muted-foreground">{check.message}</span></div><div className="flex shrink-0 flex-wrap gap-2">{anchors.length>0?anchors.slice(0,2).map((entryIndex)=> <a key={entryIndex} href={`#source-entry-${entryIndex}`} className="inline-flex min-h-7 items-center gap-1.5 border border-primary/25 bg-accent/40 px-2 text-[9px] font-semibold text-primary hover:bg-accent">{events[entryIndex]?.label??`Entry ${entryIndex+1}`} <ArrowDown size={10}/></a>):isUnknown?<span className="flex min-h-7 items-center gap-1.5 border border-review/25 px-2 text-[9px] text-review"><ShieldQuestion size={10}/> No supporting entry</span>:<span className="flex min-h-7 items-center gap-1.5 border border-border px-2 text-[9px] text-muted-foreground">No matching fields</span>}{anchors.length>2&&<span className="self-center text-[9px] text-muted-foreground">+{anchors.length-2} more</span>}</div></div><JudgedDetails check={check}/></section>;
           })}
         </div>
         <div className="mt-9 border-t border-border/80 pt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">02 <span className="text-border">/</span> Evidence</span><h2 className="mt-2 text-sm font-bold">Original log entries</h2></div><span className="ledger-mono text-[9px] uppercase tracking-[0.08em] text-muted-foreground">{events.length} source {events.length===1?"entry":"entries"}</span></div><p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Linked findings jump directly to the exact entry and source field. {email ? "The original uploaded JSON is retained privately." : "The test JSON stays in this browser and is not uploaded to cloud storage."}</p></div>
-        {events.length===0?<div className="mt-4 border border-border px-4 py-5 text-xs text-muted-foreground">No original entries were found in this run.</div>:<div className="ledger-grid-lines mt-4 grid border-y border-border/80" id="evidence">{events.map((event,index)=>{const evidenceForEntry=checks.filter((check)=>check.evidencePaths.some((path)=>path===event.path||path.startsWith(`${event.path}.`)));return <details key={index} id={`source-entry-${index}`} className="scroll-mt-20 group py-1 marker:content-none open:pb-3"><summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 py-2 hover:text-primary [&::-webkit-details-marker]:hidden"><span className="ledger-mono min-w-[40px] text-[9px] text-muted-foreground">{`E-${String(index+1).padStart(3,"0")}`}</span><span className="flex size-6 shrink-0 items-center justify-center border border-border/70 bg-secondary/30 text-muted-foreground group-open:text-primary"><ChevronDown size={12} className="transition-transform group-open:rotate-180"/></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold">{event.label}</span><span className="hidden min-w-0 max-w-[40%] truncate text-right text-[9px] text-muted-foreground sm:block">{formatEvidencePath(event.path)}</span>{evidenceForEntry.map((check)=><span key={check.id} className="hidden sm:inline-block"><StatusPill status={check.status}/></span>)}</summary><div className="ml-[52px] grid min-w-0 gap-2 pb-3"><div className="border-l border-primary/45 bg-background/55 p-3 sm:p-4"><div className="ledger-mono mb-2 flex flex-wrap justify-between gap-2 text-[9px] text-muted-foreground"><span>EXACT SOURCE <span className="text-border">/</span> {event.path}</span><span>{evidenceForEntry.map((check)=>check.name).join(" · ")||"No control fields matched"}</span></div><pre className="ledger-mono max-h-[460px] overflow-auto whitespace-pre-wrap break-words text-[9px] leading-relaxed text-foreground/90 sm:text-[10px]">{JSON.stringify(event.value,null,2)}</pre></div>{evidenceForEntry.flatMap((check)=>check.evidencePaths.filter((path)=>path===event.path||path.startsWith(`${event.path}.`)).map((path)=> <div key={`${check.id}-${path}`} className="flex flex-wrap items-center gap-2 text-[9px]"><span className="text-primary">{check.name}</span><span className="text-muted-foreground">← {formatEvidencePath(path)}</span></div>))}</div></details>;})}</div>}
+        {events.length===0?<div className="mt-4 border border-border px-4 py-5 text-xs text-muted-foreground">No original entries were found in this run.</div>:<div className="ledger-grid-lines mt-4 grid border-y border-border/80" id="evidence">{events.map((event,index)=>{const evidenceForEntry=checks.filter((check)=>measuredPaths(check).some((path)=>path===event.path||path.startsWith(`${event.path}.`)));return <details key={index} id={`source-entry-${index}`} className="scroll-mt-20 group py-1 marker:content-none open:pb-3"><summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 py-2 hover:text-primary [&::-webkit-details-marker]:hidden"><span className="ledger-mono min-w-[40px] text-[9px] text-muted-foreground">{`E-${String(index+1).padStart(3,"0")}`}</span><span className="flex size-6 shrink-0 items-center justify-center border border-border/70 bg-secondary/30 text-muted-foreground group-open:text-primary"><ChevronDown size={12} className="transition-transform group-open:rotate-180"/></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold">{event.label}</span><span className="hidden min-w-0 max-w-[40%] truncate text-right text-[9px] text-muted-foreground sm:block">{formatTracePath(event.path)}</span>{evidenceForEntry.map((check)=><span key={check.id} className="hidden sm:inline-block"><StatusPill status={check.status}/></span>)}</summary><div className="ml-[52px] grid min-w-0 gap-2 pb-3"><div className="border-l border-primary/45 bg-background/55 p-3 sm:p-4"><div className="ledger-mono mb-2 flex flex-wrap justify-between gap-2 text-[9px] text-muted-foreground"><span>EXACT SOURCE <span className="text-border">/</span> {event.path}</span><span>{evidenceForEntry.map((check)=>check.name).join(" · ")||"No control fields matched"}</span></div><pre className="ledger-mono max-h-[460px] overflow-auto whitespace-pre-wrap break-words text-[9px] leading-relaxed text-foreground/90 sm:text-[10px]">{JSON.stringify(event.value,null,2)}</pre></div>{evidenceForEntry.flatMap((check)=>measuredPaths(check).filter((path)=>path===event.path||path.startsWith(`${event.path}.`)).map((path)=> <div key={`${check.id}-${path}`} className="flex flex-wrap items-center gap-2 text-[9px]"><span className="text-primary">{check.name}</span><span className="text-muted-foreground">← {formatTracePath(path)}</span></div>))}</div></details>;})}</div>}
         <div className="mt-5 border-l-2 border-review/50 bg-review/5 p-3 sm:p-4"><div className="flex items-center gap-2 text-[10px] font-semibold text-review"><ShieldQuestion size={13}/> Important: Evidence is not certification.</div><p className="mt-1.5 max-w-4xl text-[10px] leading-relaxed text-muted-foreground">Results describe only the JSON provided and the selected thresholds. A missing hallucination label is reported as “Not evidenced”—not assumed to be zero. Human review is credited only when review or approval is explicitly recorded.</p></div>
       </div>
     </AppFrame>
@@ -432,8 +574,8 @@ export function ReportPage({ auditId }: { auditId: string }) {
   const generated=formattedDate(run.created_at);
   return <AppFrame active="report"><div className="ledger-screen mx-auto max-w-[960px]">
     <Link to="/findings/$auditId" params={{auditId:run.id}} className="inline-flex items-center gap-2 text-[10px] font-semibold text-muted-foreground hover:text-primary"><ArrowLeft size={13}/> Back to findings</Link>
-    <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-b border-border/80 pb-4"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">AgentLedger <span className="text-border">/</span> Audit report</span><h1 className="mt-2 text-[23px] font-semibold tracking-tight">Audit opinion<span className="text-primary">.</span></h1></div><Button className="min-h-10 rounded-none px-4 text-xs font-bold" onClick={()=>window.print()}><Printer size={15}/> Print / save PDF</Button></div>
-    <p className="mt-2 text-[10px] text-muted-foreground">Your browser’s print window lets you print or save a copy as a PDF.</p>
+    <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-b border-border/80 pb-4"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.14em] text-primary">AgentLedger <span className="text-border">/</span> Audit report</span><h1 className="mt-2 text-[23px] font-semibold tracking-tight">Audit opinion<span className="text-primary">.</span></h1></div><div className="flex flex-wrap gap-2"><ReportExportButtons run={run}/><Button className="min-h-10 rounded-none px-4 text-xs font-bold" onClick={()=>window.print()}><Printer size={15}/> Print</Button></div></div>
+    <p className="mt-2 text-[10px] text-muted-foreground">Exports are built on this device from the stored audit and its ledger record, including cited evidence, method and limitations. Print opens your browser’s print window for this page.</p>
   </div>
   <div className="ledger-report mx-auto max-w-[820px] bg-background text-foreground">
     <header className="flex items-start justify-between gap-4 border-b-2 border-foreground/80 pb-7">
@@ -442,8 +584,8 @@ export function ReportPage({ auditId }: { auditId: string }) {
     </header>
     <section className="ledger-print-grid grid grid-cols-2 gap-x-5 gap-y-5 border-b border-border py-7 sm:grid-cols-4"><div className="col-span-2 min-w-0"><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Agent run</span><p className="mt-2 break-words text-lg font-bold">{run.run_name}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Source file</span><p className="mt-2 break-words text-xs">{run.source_filename}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Entries reviewed</span><p className="ledger-mono mt-2 text-sm">{run.event_count.toString().padStart(2,"0")}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Audit ID</span><p className="ledger-mono mt-2 break-all text-[10px]">{run.id}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Report generated</span><p className="mt-2 text-xs">{generated}</p></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Overall opinion</span><p className="mt-2 text-xs font-bold">{opinion.title}</p></div></section>
     <aside className="my-7 border-l-[3px] border-primary bg-secondary/55 px-5 py-5"><span className="ledger-mono text-[9px] uppercase tracking-[0.15em] text-primary">01 <span className="text-border">/</span> Audit opinion</span><h2 className="mt-3 text-lg font-bold">{opinion.title}</h2><p className="mt-2 max-w-3xl text-xs leading-relaxed text-muted-foreground">{opinion.explanation}</p></aside>
-    <section className="mt-8"><div className="flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.15em] text-primary">02 <span className="text-border">/</span> Evaluation</span><h2 className="mt-2 text-base font-bold">Control checklist</h2></div><span className="ledger-mono text-[9px] text-muted-foreground">Observed evidence <span className="text-border">/</span> Selected thresholds</span></div><div className="mt-4 border-y border-border"><div className="ledger-print-grid grid grid-cols-[minmax(0,1fr)_78px_88px_110px] gap-2 border-b border-border bg-secondary/55 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_96px_110px_125px] sm:gap-3 sm:px-4"><span className="ledger-mono text-[8px] uppercase tracking-[0.1em] text-muted-foreground">Control / method</span><span className="ledger-mono text-right text-[8px] uppercase text-muted-foreground">Observed</span><span className="ledger-mono text-right text-[8px] uppercase text-muted-foreground">Threshold</span><span className="ledger-mono text-right text-[8px] uppercase text-muted-foreground">Outcome</span></div>{checks.map((check)=>{const Icon=iconsByControl[check.id];return <div key={check.id} className="ledger-print-grid grid grid-cols-[minmax(0,1fr)_78px_88px_110px] items-center gap-2 border-b border-border/70 px-3 py-3 last:border-0 sm:grid-cols-[minmax(0,1fr)_96px_110px_125px] sm:gap-3 sm:px-4"><div className="flex min-w-0 items-center gap-2"><Icon size={13} className="shrink-0 text-muted-foreground"/><span className="min-w-0 text-[10px] font-semibold leading-snug">{check.name}</span></div><span className="ledger-mono text-right text-[9px] tabular-nums">{formatPercent(check.measured)}</span><span className="ledger-mono text-right text-[9px] tabular-nums">{check.direction==="minimum"?"≥":"≤"} {check.threshold}%</span><span className="flex justify-end"><StatusPill status={check.status}/></span><p className="col-span-full pl-5 text-[8px] leading-relaxed text-muted-foreground sm:pl-[22px]">{check.summary}</p></div>;})}</div></section>
-    <div className="ledger-print-grid mt-8 grid gap-7 sm:grid-cols-2"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-primary">03 <span className="text-border">/</span> Thresholds applied</span><div className="mt-3 grid gap-2 text-[10px] text-muted-foreground"><p>Traceability ≥ <strong className="text-foreground">{thresholds.traceabilityMin}%</strong></p><p>Versioning ≥ <strong className="text-foreground">{thresholds.versioningMin}%</strong></p><p>Hallucination rate ≤ <strong className="text-foreground">{thresholds.hallucinationMax}%</strong></p><p>Human oversight ≥ <strong className="text-foreground">{thresholds.oversightMin}%</strong></p></div></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-primary">04 <span className="text-border">/</span> Review method</span><ul className="mt-3 grid list-disc gap-2 pl-4 text-[9px] leading-relaxed text-muted-foreground marker:text-primary"><li>Traceability: fraction of entries containing a stable ID or timestamp.</li><li>Versioning: fraction containing a model or agent version.</li><li>Hallucination rate: only explicit per-entry labels or log-provided rates count as measurements.</li><li>Human oversight: fraction with explicit review or approval fields; recorded intent is not proof of a completed review.</li><li>Every entry and source field can be inspected in the linked findings page.</li></ul></div></div>
+    <section className="mt-8"><div className="flex flex-wrap items-end justify-between gap-3"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.15em] text-primary">02 <span className="text-border">/</span> Evaluation</span><h2 className="mt-2 text-base font-bold">Control checklist</h2></div><span className="ledger-mono text-[9px] text-muted-foreground">Observed evidence <span className="text-border">/</span> Selected thresholds</span></div><div className="mt-4 border-y border-border"><div className="ledger-print-grid grid grid-cols-[minmax(0,1fr)_78px_88px_110px] gap-2 border-b border-border bg-secondary/55 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_96px_110px_125px] sm:gap-3 sm:px-4"><span className="ledger-mono text-[8px] uppercase tracking-[0.1em] text-muted-foreground">Control / method</span><span className="ledger-mono text-right text-[8px] uppercase text-muted-foreground">Observed</span><span className="ledger-mono text-right text-[8px] uppercase text-muted-foreground">Threshold</span><span className="ledger-mono text-right text-[8px] uppercase text-muted-foreground">Outcome</span></div>{checks.map((check)=>{const Icon=iconsByControl[check.id];return <div key={check.id} className="ledger-print-grid grid grid-cols-[minmax(0,1fr)_78px_88px_110px] items-center gap-2 border-b border-border/70 px-3 py-3 last:border-0 sm:grid-cols-[minmax(0,1fr)_96px_110px_125px] sm:gap-3 sm:px-4"><div className="flex min-w-0 items-center gap-2"><Icon size={13} className="shrink-0 text-muted-foreground"/><span className="min-w-0 text-[10px] font-semibold leading-snug">{check.name}</span></div><span className="ledger-mono text-right text-[9px] tabular-nums">{formatPercent(check.measured)}</span><span className="ledger-mono text-right text-[9px] tabular-nums">{check.direction==="minimum"?"≥":"≤"} {check.threshold}%</span><span className="flex justify-end"><StatusPill status={check.status}/></span><p className="col-span-full pl-5 text-[8px] leading-relaxed text-muted-foreground sm:pl-[22px]">{check.summary}</p>{check.method&&<p className="col-span-full pl-5 text-[8px] leading-relaxed text-muted-foreground sm:pl-[22px]"><MethodLine method={check.method}/></p>}</div>;})}</div></section>
+    <div className="ledger-print-grid mt-8 grid gap-7 sm:grid-cols-2"><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-primary">03 <span className="text-border">/</span> Thresholds applied</span><div className="mt-3 grid gap-2 text-[10px] text-muted-foreground"><p>Traceability ≥ <strong className="text-foreground">{thresholds.traceabilityMin}%</strong></p><p>Versioning ≥ <strong className="text-foreground">{thresholds.versioningMin}%</strong></p><p>Hallucination rate ≤ <strong className="text-foreground">{thresholds.hallucinationMax}%</strong></p><p>Human oversight ≥ <strong className="text-foreground">{thresholds.oversightMin}%</strong></p>{checks.some((check)=>check.id==="groundedness")&&<p>Groundedness ≥ <strong className="text-foreground">{thresholds.groundednessMin}%</strong></p>}</div></div><div><span className="ledger-mono text-[9px] uppercase tracking-[0.12em] text-primary">04 <span className="text-border">/</span> Review method</span><ul className="mt-3 grid list-disc gap-2 pl-4 text-[9px] leading-relaxed text-muted-foreground marker:text-primary"><li>Traceability: fraction of entries containing a stable ID or timestamp.</li><li>Versioning: fraction containing a model or agent version.</li><li>Hallucination rate: only explicit per-entry labels or log-provided rates count as measurements.</li><li>Human oversight: fraction with explicit review or approval fields; recorded intent is not proof of a completed review.</li><li>Every entry and source field can be inspected in the linked findings page.</li></ul></div></div>
     <aside className="my-8 border border-review/40 bg-review/5 p-4"><h2 className="flex items-center gap-2 text-xs font-bold text-review"><ShieldQuestion size={15}/> Limitations and interpretation</h2><p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">This report is an internal evidence summary, not a security assessment, factual truth guarantee, independent verification, legal opinion, or formal compliance certification. The sample is limited to the JSON entries supplied. Fields can be incomplete, mislabeled or inaccurate. “Not evidenced” means the source did not provide a usable measurement; it does not mean the control passed or failed in reality.</p></aside>
     <footer className="mt-10 border-t-2 border-foreground/70 pt-4"><div className="ledger-print-grid grid grid-cols-2 items-end gap-4"><div><span className="ledger-mono text-[9px] font-semibold uppercase tracking-[0.15em]">AgentLedger</span><p className="mt-1 text-[8px] text-muted-foreground">Evidence, not assumptions.</p></div><div className="ledger-mono text-right text-[8px] uppercase tracking-[0.1em] text-muted-foreground">Generated {generated}<br/>Report {run.id.slice(0,8).toUpperCase()}</div></div></footer>
   </div></AppFrame>;

@@ -1,0 +1,42 @@
+{
+  "schema": "agentledger.trace.v1",
+  "run_id": "gt-14-flight-times-mixed",
+  "label": "SAMPLE · Times from two flights mixed",
+  "sample": true,
+  "description": "Synthetic trace written for the groundedness eval. Not data from any real agent, customer or system.",
+  "steps": [
+    {
+      "step_id": "u1",
+      "type": "user_message",
+      "timestamp": "2026-11-18T09:01:00Z",
+      "content": "When does KL-221 land?"
+    },
+    {
+      "step_id": "t1",
+      "type": "tool_output",
+      "timestamp": "2026-11-18T09:02:00Z",
+      "tool_name": "flights.search",
+      "content": {
+        "flights": [
+          {
+            "flight": "KL-221",
+            "departs": "07:40",
+            "arrives": "09:55"
+          },
+          {
+            "flight": "KL-225",
+            "departs": "13:10",
+            "arrives": "15:20"
+          }
+        ]
+      }
+    },
+    {
+      "step_id": "a1",
+      "type": "model_answer",
+      "timestamp": "2026-11-18T09:03:00Z",
+      "model_version": "agent-v3.2",
+      "content": "Flight KL-221 departs at 07:40 and arrives at 15:20."
+    }
+  ]
+}

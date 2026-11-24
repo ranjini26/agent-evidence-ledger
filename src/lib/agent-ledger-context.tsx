@@ -8,7 +8,13 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { extractAuditEvents, type AuditCheck, type AuditThresholds } from "@/lib/agent-ledger";
+import {
+  DEFAULT_THRESHOLDS,
+  auditOpinion,
+  parseTrace,
+  type AuditThresholds,
+  type ControlResult,
+} from "@/lib/audit";
 import {
   createGuestAuditRun,
   deleteGuestAudit,
@@ -16,6 +22,7 @@ import {
   isGuestAuditRun,
   loadGuestAudits,
   readGuestThresholds,
+  recordRunInLedger,
   saveGuestAudit,
   writeGuestThresholds,
 } from "@/lib/agent-ledger-local";
@@ -28,20 +35,20 @@ interface AuditLedgerContextValue {
   runs: AuditRun[];
   loadingRuns: boolean;
   thresholds: AuditThresholds;
+  /**
+   * The user's Anthropic API key for the groundedness judge. Held in React state
+   * only: never persisted, logged or sent anywhere except api.anthropic.com.
+   * Cleared on reload and sign-out.
+   */
+  anthropicKey: string;
+  setAnthropicKey: (key: string) => void;
   error: string;
   setThresholds: (thresholds: AuditThresholds) => void;
   clearError: () => void;
-  importRun: (filename: string, log: Json, checks: AuditCheck[], runName: string) => Promise<AuditRun>;
+  importRun: (filename: string, log: Json, checks: ControlResult[], runName: string) => Promise<AuditRun>;
   removeRun: (run: AuditRun) => Promise<void>;
   signOut: () => Promise<void>;
 }
-
-const DEFAULT_THRESHOLDS: AuditThresholds = {
-  traceabilityMin: 95,
-  versioningMin: 90,
-  hallucinationMax: 5,
-  oversightMin: 10,
-};
 
 const TEMPORARY_DEVICE_ONLY_TEST_MODE = true;
 
@@ -60,6 +67,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [thresholds, setThresholdsState] = useState(DEFAULT_THRESHOLDS);
   const [error, setError] = useState("");
+  const [anthropicKey, setAnthropicKey] = useState("");
 
   const refreshRuns = useCallback(async () => {
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -93,6 +101,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           versioningMin: Number(saved.versioningMin ?? current.versioningMin),
           hallucinationMax: Number(saved.hallucinationMax ?? current.hallucinationMax),
           oversightMin: Number(saved.oversightMin ?? current.oversightMin),
+          groundednessMin: Number(saved.groundednessMin ?? current.groundednessMin),
         }));
       }
     }
@@ -186,6 +195,19 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshRuns]);
 
+  /** Append to the on-device ledger. A failure is shown but does not undo the save. */
+  const recordInLedger = useCallback(async (run: AuditRun, kind: "audit_recorded" | "audit_deleted") => {
+    try {
+      await recordRunInLedger(run, kind);
+    } catch (ledgerError) {
+      setError(
+        `The audit was ${kind === "audit_recorded" ? "saved" : "deleted"}, but it could not be added to the ledger: ${
+          ledgerError instanceof Error ? ledgerError.message : "unknown error"
+        }`,
+      );
+    }
+  }, []);
+
   const setThresholds = useCallback((next: AuditThresholds) => {
     setThresholdsState(next);
     try {
@@ -196,7 +218,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }, [email]);
 
   const importRun = useCallback(
-    async (filename: string, log: Json, checks: AuditCheck[], runName: string) => {
+    async (filename: string, log: Json, checks: ControlResult[], runName: string) => {
       setError("");
       if (TEMPORARY_DEVICE_ONLY_TEST_MODE) {
         const id = crypto.randomUUID();
@@ -210,6 +232,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           new Date().toISOString(),
         );
         await saveGuestAudit(localRun);
+        await recordInLedger(localRun, "audit_recorded");
         setRuns((current) => [localRun, ...current.filter((run) => run.id !== localRun.id)]);
         return localRun;
       }
@@ -226,6 +249,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           new Date().toISOString(),
         );
         await saveGuestAudit(localRun);
+        await recordInLedger(localRun, "audit_recorded");
         setRuns((current) => [localRun, ...current.filter((run) => run.id !== localRun.id)]);
         return localRun;
       }
@@ -247,12 +271,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           source_log: log,
           checks: JSON.parse(JSON.stringify(checks)) as Json,
           thresholds: JSON.parse(JSON.stringify(thresholds)) as Json,
-          opinion: checks.some((check) => check.status === "fail")
-            ? "Qualified — findings require attention"
-            : checks.some((check) => check.status === "not-evidenced")
-              ? "Inconclusive — evidence is incomplete"
-              : "Pass — supplied evidence meets thresholds",
-          event_count: extractAuditEvents(log).length,
+          opinion: auditOpinion(checks).title,
+          event_count: parseTrace(log).steps.length,
         })
         .select("*")
         .single();
@@ -261,24 +281,27 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         await supabase.storage.from("agentledger-run-logs").remove([storagePath]);
         throw new Error(`The audit could not be saved: ${insertError?.message ?? "Unknown error"}`);
       }
+      await recordInLedger(data, "audit_recorded");
       setRuns((current) => [data, ...current]);
       return data;
     },
-    [thresholds],
+    [recordInLedger, thresholds],
   );
 
   const removeRun = useCallback(async (run: AuditRun) => {
     setError("");
       if (isGuestAuditRun(run)) {
         await deleteGuestAudit(run.id);
+        await recordInLedger(run, "audit_deleted");
         setRuns((current) => current.filter((item) => item.id !== run.id));
         return;
       }
       const { error: removeError } = await supabase.from("audit_runs").delete().eq("id", run.id);
       if (removeError) throw new Error(`The audit could not be deleted: ${removeError.message}`);
       await supabase.storage.from("agentledger-run-logs").remove([run.storage_path]);
+      await recordInLedger(run, "audit_deleted");
       setRuns((current) => current.filter((item) => item.id !== run.id));
-  }, []);
+  }, [recordInLedger]);
 
   const signOut = useCallback(async () => {
     await queryClient.cancelQueries();
@@ -288,11 +311,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setRuns([]);
     setThresholdsState(DEFAULT_THRESHOLDS);
+    setAnthropicKey("");
   }, [queryClient]);
 
   return (
     <LedgerContext.Provider
-      value={{ email, runs, loadingRuns, thresholds, error, setThresholds, clearError: () => setError(""), importRun, removeRun, signOut }}
+      value={{ email, runs, loadingRuns, thresholds, anthropicKey, setAnthropicKey, error, setThresholds, clearError: () => setError(""), importRun, removeRun, signOut }}
     >
       {children}
     </LedgerContext.Provider>

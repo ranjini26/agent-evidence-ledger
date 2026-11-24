@@ -1,0 +1,33 @@
+{
+  "schema": "agentledger.trace.v1",
+  "run_id": "gt-32-relative-date",
+  "label": "SAMPLE · Relative date not resolvable",
+  "sample": true,
+  "description": "Synthetic trace written for the groundedness eval. Not data from any real agent, customer or system.",
+  "steps": [
+    {
+      "step_id": "u1",
+      "type": "user_message",
+      "timestamp": "2026-11-18T09:01:00Z",
+      "content": "When was refund R-90 processed?"
+    },
+    {
+      "step_id": "t1",
+      "type": "tool_output",
+      "timestamp": "2026-11-18T09:02:00Z",
+      "tool_name": "refunds.lookup",
+      "content": {
+        "refund_id": "R-90",
+        "status": "processed",
+        "processed_at": "2026-11-02"
+      }
+    },
+    {
+      "step_id": "a1",
+      "type": "model_answer",
+      "timestamp": "2026-11-18T09:03:00Z",
+      "model_version": "agent-v3.2",
+      "content": "Your refund was processed yesterday."
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema": "agentledger.trace.v1",
+  "run_id": "gt-09-speculative-cause",
+  "label": "SAMPLE · Cause stated without evidence",
+  "sample": true,
+  "description": "Synthetic trace written for the groundedness eval. Not data from any real agent, customer or system.",
+  "steps": [
+    {
+      "step_id": "u1",
+      "type": "user_message",
+      "timestamp": "2026-11-18T09:01:00Z",
+      "content": "Why are payments failing?"
+    },
+    {
+      "step_id": "t1",
+      "type": "tool_output",
+      "timestamp": "2026-11-18T09:02:00Z",
+      "tool_name": "status.service",
+      "content": {
+        "service": "payments-api",
+        "status": "degraded",
+        "since": "2026-11-18T08:12:00Z"
+      }
+    },
+    {
+      "step_id": "a1",
+      "type": "model_answer",
+      "timestamp": "2026-11-18T09:03:00Z",
+      "model_version": "agent-v3.2",
+      "content": "The payments API has been degraded since 08:12 UTC on 18 November because of a database outage."
+    }
+  ]
+}
