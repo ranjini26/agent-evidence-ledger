@@ -2,16 +2,16 @@
 
 Recorded from the static build with the `product-demo` agent skill (pinned in `skills-lock.json`; install with `npx skills experimental_install`, Node 22+). All data shown is synthetic **SAMPLE** data, and every frame of the voiceover video is stamped as such.
 
-| File | What it is |
-| --- | --- |
-| `full-demo-voiceover.mp4` | Full walkthrough, ~99 s, voiceover (macOS `say`, Samantha) and soft English captions |
-| `full-demo-voiceover.png` | Poster frame |
-| `full-demo.srt` | Captions as a separate file |
-| `evidence-trail.mp4` / `.png` | 17 s silent clip: from a failed control to the exact log entry |
-| `takes/` | Cursor scripts for each video |
-| `voiceover/narration.json` | The narration script, one entry per scene |
-| `voiceover/mix.py` | Places each narration clip at its scene, writes captions, adds the SAMPLE stamp |
-| `fixtures/` | The SAMPLE trace uploaded in the full demo (a copy of `evals/groundedness/traces/gt-24-mixed-answers.json`) |
+| File                          | What it is                                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `full-demo-voiceover.mp4`     | Full walkthrough, ~99 s, voiceover (macOS `say`, Samantha) and soft English captions                        |
+| `full-demo-voiceover.png`     | Poster frame                                                                                                |
+| `full-demo.srt`               | Captions as a separate file                                                                                 |
+| `evidence-trail.mp4` / `.png` | 17 s silent clip: from a failed control to the exact log entry                                              |
+| `takes/`                      | Cursor scripts for each video                                                                               |
+| `voiceover/narration.json`    | The narration script, one entry per scene                                                                   |
+| `voiceover/mix.py`            | Places each narration clip at its scene, writes captions, adds the SAMPLE stamp                             |
+| `fixtures/`                   | The SAMPLE trace uploaded in the full demo (a copy of `evals/groundedness/traces/gt-24-mixed-answers.json`) |
 
 ## Re-render the full demo
 

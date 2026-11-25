@@ -12,3 +12,6 @@ src/integrations/
 AGENTS.md
 drizzle/
 supabase/
+
+# Third-party agent skills (not part of this project)
+.claude/

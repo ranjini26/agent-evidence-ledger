@@ -16,7 +16,9 @@ const FRAMES = `${OUT}.frames`;
 // A byte-identical copy of evals/groundedness/traces/gt-24-mixed-answers.json, named so the
 // app (which names runs after the file) labels the uploaded run SAMPLE.
 const TRACE = resolve("out/product-demo/fixtures/SAMPLE · Plan and renewal answers.json");
-const durations = JSON.parse(readFileSync(resolve("out/product-demo/voiceover/durations.json"), "utf8"));
+const durations = JSON.parse(
+  readFileSync(resolve("out/product-demo/voiceover/durations.json"), "utf8"),
+);
 const GAP_MS = 500;
 const marks = [];
 
@@ -33,7 +35,9 @@ async function scene(t, id, body) {
 }
 
 const section = (t, title) =>
-  t.frame.locator("section", { has: t.frame.locator("h3", { hasText: new RegExp(`^${title}$`) }) }).first();
+  t.frame
+    .locator("section", { has: t.frame.locator("h3", { hasText: new RegExp(`^${title}$`) }) })
+    .first();
 
 export async function ready(t) {
   await t.frame.locator("aside a", { hasText: "SAMPLE · Model version drift" }).first().waitFor();
@@ -45,33 +49,51 @@ export default async function take(t) {
 
   await scene(t, "intro", async () => {
     await t.hold(700);
-    await t.hover(t.frame.getByText("sample audits are ready.", { exact: false }).first(), { fx: 0.2, dwell: 900 });
+    await t.hover(t.frame.getByText("sample audits are ready.", { exact: false }).first(), {
+      fx: 0.2,
+      dwell: 900,
+    });
     await t.hover(t.frame.getByText("Audited runs", { exact: false }).first(), { dwell: 700 });
     await t.hover(t.frame.getByText("Not evidenced", { exact: true }).first(), { dwell: 700 });
   });
 
   await scene(t, "thresholds", async () => {
-    for (const key of ["traceabilityMin", "versioningMin", "hallucinationMax", "oversightMin", "groundednessMin"]) {
+    for (const key of [
+      "traceabilityMin",
+      "versioningMin",
+      "hallucinationMax",
+      "oversightMin",
+      "groundednessMin",
+    ]) {
       await t.hover(t.frame.locator(`#threshold-${key}`), { fx: 0.4, dwell: 650 });
     }
   });
 
   await scene(t, "key", async () => {
     await t.hover(t.frame.locator("#anthropic-key"), { fx: 0.25, dwell: 1200 });
-    await t.hover(t.frame.getByText("Kept in this tab's memory only.", { exact: false }), { fx: 0.3, dwell: 900 });
+    await t.hover(t.frame.getByText("Kept in this tab's memory only.", { exact: false }), {
+      fx: 0.3,
+      dwell: 900,
+    });
   });
 
   await scene(t, "upload", async () => {
     const choose = t.frame.getByRole("button", { name: /Choose JSON file/ });
     await t.hover(choose, { dwell: 500 });
-    const [chooser] = await Promise.all([t.page.waitForEvent("filechooser"), t.clickOn(choose, { settle: 200 })]);
+    const [chooser] = await Promise.all([
+      t.page.waitForEvent("filechooser"),
+      t.clickOn(choose, { settle: 200 }),
+    ]);
     await chooser.setFiles(TRACE);
     await section(t, "Traceability").waitFor();
     await t.hold(800);
   });
 
   await scene(t, "results", async () => {
-    await t.hover(t.frame.getByText("Qualified — findings require attention").first(), { fx: 0.3, dwell: 900 });
+    await t.hover(t.frame.getByText("Qualified — findings require attention").first(), {
+      fx: 0.3,
+      dwell: 900,
+    });
     await t.hover(section(t, "Traceability").locator("h3"), { fx: 0.3, dwell: 1300 });
     await t.hover(section(t, "Versioning").locator("h3"), { fx: 0.3, dwell: 1800 });
     await t.wheel(260, { ms: 700 });
@@ -90,11 +112,16 @@ export default async function take(t) {
     await t.wheel(-300, { ms: 600 });
     await t.hover(step, { dwell: 500 });
     await t.clickOn(step, { settle: 600 });
-    await t.hover(t.frame.locator("#source-entry-2").getByText("← steps › entry 3 › model_version", { exact: true }), {
-      fx: 1.06,
-      fy: 0.7,
-      dwell: 1400,
-    });
+    await t.hover(
+      t.frame
+        .locator("#source-entry-2")
+        .getByText("← steps › entry 3 › model_version", { exact: true }),
+      {
+        fx: 1.06,
+        fy: 0.7,
+        dwell: 1400,
+      },
+    );
     t.poster();
   });
 
@@ -104,13 +131,18 @@ export default async function take(t) {
     await t.clickOn(report, { settle: 300 });
     await t.frame.getByRole("button", { name: /Export PDF/ }).waitFor();
     await t.hold(700);
-    await t.hover(t.frame.getByText("Qualified — findings require attention").first(), { fx: 0.3, dwell: 900 });
+    await t.hover(t.frame.getByText("Qualified — findings require attention").first(), {
+      fx: 0.3,
+      dwell: 900,
+    });
     await t.hover(t.frame.getByRole("button", { name: /Export Markdown/ }), { dwell: 500 });
     await t.clickOn(t.frame.getByRole("button", { name: /Export PDF/ }), { settle: 900 });
   });
 
   await scene(t, "ledger", async () => {
-    await t.clickOn(t.frame.locator("aside a", { hasText: /^Dashboard$/ }).first(), { settle: 400 });
+    await t.clickOn(t.frame.locator("aside a", { hasText: /^Dashboard$/ }).first(), {
+      settle: 400,
+    });
     await t.frame.getByRole("button", { name: "Verify ledger" }).waitFor();
     await t.moveTo(t.width * 0.4, t.height * 0.6, { ms: 500 });
     await t.wheel(760, { ms: 900 });
@@ -125,5 +157,8 @@ export default async function take(t) {
     await t.hold(1200);
   });
 
-  writeFileSync(`${OUT}.scenes.json`, `${JSON.stringify({ fps: t.fps, scenes: marks }, null, 2)}\n`);
+  writeFileSync(
+    `${OUT}.scenes.json`,
+    `${JSON.stringify({ fps: t.fps, scenes: marks }, null, 2)}\n`,
+  );
 }
