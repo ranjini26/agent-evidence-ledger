@@ -1,0 +1,12 @@
+[
+  { "id": "intro", "text": "This is AgentLedger. It audits the JSON log of an AI agent run, entirely in your browser. Everything in this demo is synthetic sample data, marked SAMPLE." },
+  { "id": "thresholds", "text": "You choose the bar for five controls: traceability, versioning, hallucination rate, human oversight, and groundedness. Each threshold is editable, and it is saved with every audit." },
+  { "id": "key", "text": "The groundedness check is optional. It uses your own Anthropic API key, which stays in this tab's memory and is never saved. In this demo, we leave it empty." },
+  { "id": "upload", "text": "Now, upload a run. This sample trace has a user question, a tool output, and two model answers." },
+  { "id": "results", "text": "Each control is scored against your thresholds. Traceability passes: every step has an ID. Versioning fails: only the two answers record a model version. Hallucination rate and human oversight are not evidenced, because the log has no labels for them. Missing data is never counted as a pass." },
+  { "id": "groundedness", "text": "Groundedness is not evidenced either. No key was given, so no call was made. The method, the model, and the prompt version are shown on the result." },
+  { "id": "evidence", "text": "Every result links to the exact log entry it came from. Click a step, and you land on the source, with the field each control read." },
+  { "id": "report", "text": "The report page gives the overall opinion, and exports to Markdown or PDF, generated on this device." },
+  { "id": "ledger", "text": "Each audit is also written to a local ledger. Every record carries the SHA-256 hash of the record before it. Verify ledger recomputes the whole chain, and names the exact record if anything was changed." },
+  { "id": "outro", "text": "AgentLedger. Evidence-linked results, never invented, in a tamper-evident ledger." }
+]

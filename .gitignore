@@ -31,3 +31,14 @@ dist-ssr
 *.sln
 *.sw?
 .gstack/
+
+# Agent skills installed with `npx skills` (third-party; restore from skills-lock.json)
+.claude/skills/
+
+# Product demo intermediates (regenerate with the take and voiceover/mix.py)
+out/product-demo/*.frames/
+out/product-demo/full-demo.mp4
+out/product-demo/full-demo.png
+out/product-demo/voiceover/*.aiff
+out/product-demo/voiceover/*-voice.m4a
+out/product-demo/voiceover/*-stamp.png

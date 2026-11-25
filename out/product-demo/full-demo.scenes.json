@@ -1,0 +1,45 @@
+{
+  "fps": 30,
+  "scenes": [
+    {
+      "id": "intro",
+      "frame": 0
+    },
+    {
+      "id": "thresholds",
+      "frame": 307
+    },
+    {
+      "id": "key",
+      "frame": 652
+    },
+    {
+      "id": "upload",
+      "frame": 951
+    },
+    {
+      "id": "results",
+      "frame": 1162
+    },
+    {
+      "id": "groundedness",
+      "frame": 1692
+    },
+    {
+      "id": "evidence",
+      "frame": 1962
+    },
+    {
+      "id": "report",
+      "frame": 2203
+    },
+    {
+      "id": "ledger",
+      "frame": 2420
+    },
+    {
+      "id": "outro",
+      "frame": 2804
+    }
+  ]
+}

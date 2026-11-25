@@ -1,0 +1,115 @@
+1
+00:00:00,000 --> 00:00:01,280
+This is AgentLedger.
+
+2
+00:00:01,280 --> 00:00:05,632
+It audits the JSON log of an AI agent run, entirely in your browser.
+
+3
+00:00:05,632 --> 00:00:09,728
+Everything in this demo is synthetic sample data, marked SAMPLE.
+
+4
+00:00:10,233 --> 00:00:12,522
+You choose the bar for five controls:
+
+5
+00:00:12,522 --> 00:00:17,470
+traceability, versioning, hallucination rate, human oversight, and groundedness.
+
+6
+00:00:17,470 --> 00:00:21,244
+Each threshold is editable, and it is saved with every audit.
+
+7
+00:00:21,733 --> 00:00:23,873
+The groundedness check is optional.
+
+8
+00:00:23,873 --> 00:00:29,252
+It uses your own Anthropic API key, which stays in this tab's memory and is never saved.
+
+9
+00:00:29,252 --> 00:00:31,208
+In this demo, we leave it empty.
+
+10
+00:00:31,700 --> 00:00:32,949
+Now, upload a run.
+
+11
+00:00:32,949 --> 00:00:38,220
+This sample trace has a user question, a tool output, and two model answers.
+
+12
+00:00:38,733 --> 00:00:41,555
+Each control is scored against your thresholds.
+
+13
+00:00:41,555 --> 00:00:42,755
+Traceability passes:
+
+14
+00:00:42,755 --> 00:00:44,016
+every step has an ID.
+
+15
+00:00:44,016 --> 00:00:45,037
+Versioning fails:
+
+16
+00:00:45,037 --> 00:00:47,678
+only the two answers record a model version.
+
+17
+00:00:47,678 --> 00:00:53,501
+Hallucination rate and human oversight are not evidenced, because the log has no labels for them.
+
+18
+00:00:53,501 --> 00:00:55,902
+Missing data is never counted as a pass.
+
+19
+00:00:56,400 --> 00:00:58,572
+Groundedness is not evidenced either.
+
+20
+00:00:58,572 --> 00:01:00,804
+No key was given, so no call was made.
+
+21
+00:01:00,804 --> 00:01:04,914
+The method, the model, and the prompt version are shown on the result.
+
+22
+00:01:05,400 --> 00:01:08,586
+Every result links to the exact log entry it came from.
+
+23
+00:01:08,586 --> 00:01:12,932
+Click a step, and you land on the source, with the field each control read.
+
+24
+00:01:13,433 --> 00:01:19,993
+The report page gives the overall opinion, and exports to Markdown or PDF, generated on this device.
+
+25
+00:01:20,667 --> 00:01:23,438
+Each audit is also written to a local ledger.
+
+26
+00:01:23,438 --> 00:01:27,256
+Every record carries the SHA-256 hash of the record before it.
+
+27
+00:01:27,256 --> 00:01:32,983
+Verify ledger recomputes the whole chain, and names the exact record if anything was changed.
+
+28
+00:01:33,467 --> 00:01:34,248
+AgentLedger.
+
+29
+00:01:34,248 --> 00:01:38,676
+Evidence-linked results, never invented, in a tamper-evident ledger.

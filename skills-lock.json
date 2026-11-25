@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "product-demo": {
+      "source": "paralect/saas-skills",
+      "commit": "33aea9c781ed0fb58276d6d03c1ca017dac58ec5",
+      "sourceType": "github",
+      "skillPath": "skills/product-demo/SKILL.md",
+      "computedHash": "11cf6322805d2c81462b8f65c1567e4ff0d9b6e15bdd7925a29e09d6fedf388d"
+    }
+  }
+}
